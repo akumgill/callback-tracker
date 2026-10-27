@@ -1,0 +1,2 @@
+# Dancers who asked to be left out of the index, one full name per line.
+# The next crawl removes them from every competition.

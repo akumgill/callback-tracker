@@ -1,0 +1,482 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Callback Tracker</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo+Narrow:wght@500;700&family=IBM+Plex+Mono:wght@400;500&family=Public+Sans:wght@400;600&display=swap">
+<style>
+/* Layout: sticky search bar, then summary -> trend small multiples -> heatmaps -> per-competition tables, one column on phones */
+:root {
+  --bg: #f4f5f8;
+  --surface: #ffffff;
+  --fg: #16181d;
+  --muted: #5c6472;
+  --line: #dde1e8;
+  --accent: #7a2453;
+  --accent-soft: #f4e7ef;
+  --font-display: 'Archivo Narrow', 'Arial Narrow', 'Helvetica Neue', sans-serif;
+  --font-body: 'Public Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-data: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121419; --surface: #1a1d24; --fg: #e9ebef; --muted: #9ba3b1; --line: #2d323c;
+    --accent: #e48bb9; --accent-soft: #3a2131; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121419; --surface: #1a1d24; --fg: #e9ebef; --muted: #9ba3b1; --line: #2d323c;
+  --accent: #e48bb9; --accent-soft: #3a2131; color-scheme: dark;
+}
+
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.5; }
+.wrap { max-width: 1180px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--surface); }
+
+header { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--surface); border-bottom: 1px solid var(--line); }
+header .wrap { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; padding-block: 12px; }
+.brand { font-family: var(--font-display); font-weight: 700; font-size: 22px; letter-spacing: 0.01em; white-space: nowrap; }
+.brand span { color: var(--accent); }
+.search { position: relative; flex: 1 1 320px; min-width: 0; }
+.search input { width: 100%; box-sizing: border-box; font: inherit; padding: 9px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); }
+.search input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.suggest { position: absolute; left: 0; right: 0; top: calc(100% + 4px); margin: 0; padding: 4px; list-style: none; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 8px 24px rgb(0 0 0 / 0.12); max-height: 60vh; overflow-y: auto; }
+.suggest li { padding: 8px 10px; border-radius: 4px; cursor: pointer; display: flex; justify-content: space-between; gap: 12px; }
+.suggest li[aria-selected="true"], .suggest li:hover { background: var(--accent-soft); }
+.suggest .aff { color: var(--muted); font-size: 13px; text-align: right; }
+
+main .wrap { display: grid; grid-template-columns: minmax(0, 1fr); gap: 36px; padding-block: 28px 48px; }
+main .wrap > * { min-width: 0; }
+h1 { font-family: var(--font-display); font-weight: 700; font-size: clamp(30px, 5vw, 44px); line-height: 1.05; margin: 0; text-wrap: balance; }
+h2 { font-family: var(--font-display); font-weight: 700; font-size: 22px; margin: 0 0 4px; }
+.sub { color: var(--muted); margin: 0; }
+.eyebrow { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+
+.person { display: grid; gap: 14px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { font: inherit; font-size: 13px; padding: 5px 11px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); cursor: pointer; }
+.chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--surface); }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.stat { background: var(--surface); padding: 12px 14px; display: grid; gap: 2px; }
+.stat b { font-family: var(--font-display); font-size: 28px; line-height: 1; font-variant-numeric: tabular-nums; }
+
+.trend { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 16px; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 10px 4px; min-width: 0; }
+.panel h3 { font-family: var(--font-display); font-size: 17px; margin: 2px 6px 0; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: var(--muted); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+.scroll { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
+
+.comp { display: grid; gap: 8px; }
+.comp header, .comphead { position: static; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; background: none; border: 0; }
+.comphead h3 { font-family: var(--font-display); font-size: 19px; margin: 0; }
+.comphead a, td a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th { text-align: left; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); padding: 8px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td { padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+tr:last-child td { border-bottom: 0; }
+.num { font-family: var(--font-data); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bib { display: inline-block; font-family: var(--font-data); font-size: 12px; padding: 0 6px; border: 1.5px solid var(--fg); border-radius: 3px; margin-right: 6px; }
+.lvl { display: inline-block; font-size: 12px; font-weight: 600; padding: 1px 7px; border-radius: 4px; color: #fff; margin-right: 6px; }
+.rounds { font-family: var(--font-data); font-size: 13px; color: var(--muted); }
+.rounds b { color: var(--fg); font-weight: 500; }
+.empty, .status { color: var(--muted); padding: 24px 0; }
+footer .wrap { padding-block: 0 40px; color: var(--muted); font-size: 13px; display: grid; gap: 4px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<header>
+  <div class="wrap">
+    <div class="brand">Callback <span>Tracker</span></div>
+    <div class="search" role="combobox" aria-expanded="false" aria-owns="suggest">
+      <input id="q" type="search" autocomplete="off" placeholder="Search a dancer by name or school" aria-label="Dancer name or school" aria-controls="suggest">
+      <ul id="suggest" class="suggest" role="listbox" hidden></ul>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="wrap" id="app">
+    <p class="status" id="status">Loading results…</p>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span id="coverage"></span>
+    <span>Results come from the public results pages of competitions run on DSCO. This page isn't affiliated with DSCO. Competitions scored elsewhere (O2CM, for example) aren't included.</span>
+    <span>Placement score = share of the other couples you finished ahead of, (couples − place) ÷ (couples − 1): 1st is 100%, last is 0%. Points are approximate YCN proficiency points: 3/2/1 for 1st–3rd, plus 1 for 4th–6th when the event had a quarterfinal.</span>
+  </div>
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/plotly.js/2.33.0/plotly.min.js"></script>
+<script>
+const PROGRESSION = ['Newcomer', 'Bronze', 'Silver', 'Gold', 'Novice', 'Prechamp', 'Championship'];
+const LEVEL_ORDER = [...PROGRESSION, 'Syllabus'];
+const LEVELS = {
+  Newcomer: ['#5f8f6a', 'circle'], Bronze: ['#b4652f', 'circle'], Silver: ['#7a8aa3', 'square'],
+  Gold: ['#c2960f', 'diamond'], Novice: ['#2a8c7f', 'triangle-up'], Prechamp: ['#6b55cc', 'triangle-down'],
+  Championship: ['#c2386b', 'star'], Syllabus: ['#159a8c', 'diamond-open'],
+};
+const STYLES = ['Standard', 'Smooth', 'Latin', 'Rhythm'];
+const DANCES = {
+  Standard: ['Waltz', 'Tango', 'Foxtrot', 'Quickstep', 'Viennese Waltz'],
+  Smooth: ['Waltz', 'Tango', 'Foxtrot', 'Viennese Waltz'],
+  Latin: ['ChaCha', 'Rumba', 'Samba', 'Jive', 'Paso Doble'],
+  Rhythm: ['ChaCha', 'Rumba', 'Swing', 'Bolero', 'Mambo'],
+};
+const DEFAULT_PERSON = 'Akum Gill';
+// ColorBrewer RdYlGn (Plotly.js has no built-in by that name)
+const RDYLGN = ['#a50026', '#d73027', '#f46d43', '#fdae61', '#fee08b', '#ffffbf', '#d9ef8b', '#a6d96a', '#66bd63', '#1a9850', '#006837']
+  .map((c, i, a) => [i / (a.length - 1), c]);
+
+const state = { comps: [], people: [], files: {}, person: null, aff: null, entries: [] };
+const $ = s => document.querySelector(s);
+const el = (tag, attrs = {}, ...kids) => {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) k === 'class' ? n.className = v : k.startsWith('on') ? n.addEventListener(k.slice(2), v) : n.setAttribute(k, v);
+  for (const k of kids.flat()) if (k != null) n.append(k instanceof Node ? k : String(k));
+  return n;
+};
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+const norm = s => s.trim().replace(/\s+/g, ' ').toLowerCase();
+const slug = s => norm(s).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const levelColor = l => (LEVELS[l] || ['#888', 'circle'])[0];
+const fmtDate = d => d.toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+const danceLabel = d => d.replace('Viennese Waltz', 'V. Waltz');
+const cleanComp = n => n.split(/\s[-–|]\s/)[0].trim();
+const shortComp = n => cleanComp(n).replace(/\b(19|20)\d\d\b|'\d\d\b/g, '').replace(/Invitational/i, 'Inv.')
+  .replace(/\b(University|DanceSport|Dancesport|Competition)\b/g, '').replace(/[@\s]+$/, '').replace(/\s+/g, ' ').trim();
+const ordinal = n => n + (n % 100 >= 11 && n % 100 <= 13 ? 'th' : { 1: 'st', 2: 'nd', 3: 'rd' }[n % 10] || 'th');
+
+function roundAbbr(name) {
+  if (/quarter/i.test(name)) return 'QF';
+  if (/semi/i.test(name)) return 'SF';
+  if (/^final/i.test(name)) return 'F';
+  const m = name.match(/1\/(\d+)/) || name.match(/(\d+)(?:st|nd|rd|th)\s*round/i);
+  if (m) return name.includes('/') ? `1/${m[1]}` : `R${m[1]}`;
+  return name.slice(0, 3);
+}
+
+// ---------------------------------------------------------------- data
+
+async function getJSON(path) {
+  const r = await fetch(path);
+  if (!r.ok) throw new Error(`${path}: ${r.status}`);
+  return r.json();
+}
+
+async function loadComp(i) {
+  const c = state.comps[i];
+  state.files[c.key] ??= getJSON(`data/${c.key}.json`);
+  return state.files[c.key];
+}
+
+async function entriesFor(person) {
+  const want = norm(person[0]);
+  const comps = await Promise.all(person[2].map(loadComp));
+  const out = [];
+  for (const comp of comps) {
+    const date = new Date(comp.date + 'T00:00:00Z');
+    for (const ev of comp.events) {
+      for (const [num, lead, follow, aff, place, recalls, final] of ev.c) {
+        const role = norm(lead) === want ? 'Lead' : norm(follow) === want ? 'Follow' : null;
+        if (!role) continue;
+        const N = Math.max(ev.N, place);
+        const level = PROGRESSION.includes(ev.lv) || ev.lv === 'Syllabus' ? ev.lv : (ev.lv || 'Other');
+        const rounds = ev.r.map((name, k) => ({ name, judges: ev.j[k], recalls: recalls[k] })).filter(r => r.recalls);
+        out.push({
+          comp, date, ev, num, aff, place, N, final, rounds, level, role,
+          partner: role === 'Lead' ? follow : lead,
+          beat: N > 1 ? (N - place) / (N - 1) * 100 : 100,
+          cb: ev.d.map((_, d) => {
+            const got = rounds.reduce((s, r) => s + r.recalls[d], 0), of = rounds.reduce((s, r) => s + r.judges, 0);
+            return of ? got / of * 100 : null;
+          }),
+          hadQF: ev.r.length >= 3,
+        });
+      }
+    }
+  }
+  return out.sort((a, b) => a.date - b.date || a.ev.n.localeCompare(b.ev.n));
+}
+
+function ycnPoints(e) {
+  if (e.place <= 3) return 4 - e.place;
+  return e.place <= 6 && e.hadQF ? 1 : 0;
+}
+
+// ---------------------------------------------------------------- search
+
+function matches(q) {
+  const words = norm(q).split(' ').filter(Boolean);
+  if (!words.length) return [];
+  const scored = [];
+  for (const p of state.people) {
+    const hay = (p[0] + ' ' + p[1].join(' ')).toLowerCase();
+    if (words.every(w => hay.includes(w))) {
+      const starts = p[0].toLowerCase().startsWith(words[0]) ? 0 : 1;
+      scored.push([starts, -p[2].length, p]);
+    }
+  }
+  return scored.sort((a, b) => a[0] - b[0] || a[1] - b[1]).slice(0, 10).map(s => s[2]);
+}
+
+function setupSearch() {
+  const q = $('#q'), list = $('#suggest'), box = $('.search');
+  let items = [], active = -1;
+  const close = () => { list.hidden = true; box.setAttribute('aria-expanded', 'false'); active = -1; };
+  const paint = () => {
+    list.replaceChildren(...items.map((p, i) => el('li', {
+      role: 'option', id: `opt-${i}`, 'aria-selected': String(i === active),
+      onmousedown: ev => { ev.preventDefault(); choose(p); },
+    }, el('span', {}, p[0]), el('span', { class: 'aff' }, p[1].join(', ') || '—'))));
+    list.hidden = !items.length;
+    box.setAttribute('aria-expanded', String(!!items.length));
+  };
+  const choose = p => { q.value = ''; close(); q.blur(); showPerson(p); };
+  q.addEventListener('input', () => { items = matches(q.value); active = items.length ? 0 : -1; paint(); });
+  q.addEventListener('keydown', ev => {
+    if (list.hidden) return;
+    if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+      ev.preventDefault();
+      active = (active + (ev.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+      paint();
+    } else if (ev.key === 'Enter' && items[active]) { ev.preventDefault(); choose(items[active]); }
+    else if (ev.key === 'Escape') close();
+  });
+  q.addEventListener('blur', close);
+}
+
+// ---------------------------------------------------------------- views
+
+async function showPerson(person, aff = null) {
+  state.person = person;
+  state.aff = aff;
+  try { history.replaceState(null, '', '#' + slug(person[0])); } catch (e) {}
+  $('#app').replaceChildren(el('p', { class: 'status' }, `Loading ${person[0]}…`));
+  state.all = await entriesFor(person);
+  render();
+}
+
+function render() {
+  const person = state.person;
+  const affs = [...new Set(state.all.map(e => e.aff).filter(Boolean))];
+  const entries = state.aff ? state.all.filter(e => e.aff === state.aff) : state.all;
+  state.entries = entries;
+  const app = $('#app');
+  if (!entries.length) {
+    app.replaceChildren(el('p', { class: 'empty' }, `No DSCO results found for ${person[0]}.`));
+    return;
+  }
+
+  const comps = new Set(entries.map(e => e.comp.key));
+  const finals = entries.filter(e => e.final).length;
+  const best = Math.min(...entries.map(e => e.place));
+  const points = entries.reduce((s, e) => s + (PROGRESSION.includes(e.level) ? ycnPoints(e) * e.ev.d.length : 0), 0);
+  // highest syllabus level danced at the most recent competition
+  const prog = entries.filter(e => PROGRESSION.includes(e.level));
+  const lastComp = (prog.at(-1) || entries.at(-1)).comp;
+  const latest = (prog.length ? prog : entries).filter(e => e.comp === lastComp)
+    .sort((a, b) => PROGRESSION.indexOf(b.level) - PROGRESSION.indexOf(a.level))[0];
+  const partners = [...new Set(entries.map(e => e.partner).filter(Boolean))];
+
+  const head = el('section', { class: 'person' },
+    el('div', { class: 'eyebrow' }, affs.join(' · ') || 'Dancer'),
+    el('h1', {}, person[0]),
+    affs.length > 1 ? el('div', { class: 'chips' },
+      [null, ...affs].map(a => el('button', { class: 'chip', 'aria-pressed': String(state.aff === a), onclick: () => { state.aff = a; render(); } }, a || 'All schools'))) : null,
+    el('div', { class: 'stats' },
+      stat(comps.size, comps.size === 1 ? 'competition' : 'competitions'),
+      stat(entries.length, 'events'),
+      stat(finals, finals === 1 ? 'final' : 'finals'),
+      stat(ordinal(best), 'best placement'),
+      stat(points, 'YCN points (approx.)'),
+      stat(latest.level, `level at ${shortComp(latest.comp.name)}`)),
+    partners.length ? el('p', { class: 'sub' }, `Danced with ${partners.join(', ')}.`) : null,
+  );
+
+  const trend = el('section', {},
+    el('h2', {}, 'Placement over time'),
+    el('p', { class: 'sub' }, 'Placement score per event: 1st place is 100%, last is 0%. Each line follows one level through its average at every competition (Syllabus side events are marks only).'),
+    levelLegend(entries),
+    el('div', { class: 'trend', id: 'trend' }));
+
+  const grids = el('section', {},
+    el('h2', {}, 'Every dance, every competition'),
+    el('p', { class: 'sub' }, 'First grid: placement score (1st = 100%, last = 0%), labelled with the place and number of couples. Second grid: share of judges’ marks received across all rounds, labelled with marks per round (of 5 judges unless shown) and final place.'),
+    el('div', { class: 'scroll' }, el('div', { id: 'heat-place' })),
+    el('div', { class: 'scroll', style: 'margin-top:16px' }, el('div', { id: 'heat-cb' })));
+
+  const tables = el('section', {}, el('h2', {}, 'Results by competition'), ...compTables(entries));
+
+  app.replaceChildren(head, trend, grids, tables);
+  drawTrend(entries);
+  drawHeat(entries);
+}
+
+const stat = (value, label) => el('div', { class: 'stat' }, el('b', {}, value), el('span', { class: 'sub' }, label));
+
+function levelLegend(entries) {
+  const present = LEVEL_ORDER.filter(l => entries.some(e => e.level === l));
+  return el('div', { class: 'legend' }, present.map(l => el('span', {}, el('i', { style: `background:${levelColor(l)}` }), l)),
+  );
+}
+
+function plotTheme() {
+  return {
+    paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)',
+    font: { family: css('--font-body'), color: css('--fg'), size: 12 },
+    hoverlabel: { font: { family: css('--font-body') } },
+  };
+}
+
+function drawTrend(entries) {
+  const box = $('#trend');
+  const dates = entries.map(e => e.date.getTime());
+  const pad = 20 * 864e5;
+  const xr = [new Date(Math.min(...dates) - pad), new Date(Math.max(...dates) + pad)];
+  // lay out every panel before drawing, so each plot sizes to its final grid cell
+  const panels = STYLES.map(style => [style, entries.filter(e => e.ev.st === style), el('div')]).filter(p => p[1].length);
+  box.append(...panels.map(([style, , div]) => el('div', { class: 'panel' }, el('h3', {}, style), div)));
+  for (const [, es, div] of panels) {
+    const traces = [];
+    for (const lvl of LEVEL_ORDER.filter(l => PROGRESSION.includes(l) && es.some(e => e.level === l))) {
+      const byComp = {};
+      for (const e of es.filter(e => e.level === lvl)) (byComp[e.date.getTime()] ??= []).push(e.beat);
+      const lx = Object.keys(byComp).map(Number).sort((a, b) => a - b);
+      traces.push({
+        x: lx.map(t => new Date(t)), y: lx.map(t => byComp[t].reduce((a, b) => a + b) / byComp[t].length),
+        mode: 'lines', line: { color: levelColor(lvl), width: 2 }, opacity: 0.7, hoverinfo: 'skip', showlegend: false,
+      });
+    }
+    for (const lvl of [...new Set(es.map(e => e.level))]) {
+      const le = es.filter(e => e.level === lvl);
+      const [color, symbol] = LEVELS[lvl] || ['#888', 'circle'];
+      traces.push({
+        x: le.map(e => e.date), y: le.map(e => e.beat), mode: 'markers', name: lvl, showlegend: false,
+        marker: { color, symbol, size: 10, line: { color: css('--surface'), width: 1.5 } },
+        text: le.map(e => `<b>${esc(e.ev.n)}</b><br>${esc(cleanComp(e.comp.name))}<br>${ordinal(e.place)} of ${e.N} · score ${e.beat.toFixed(0)}%<br>with ${esc(e.partner || '—')}`),
+        hovertemplate: '%{text}<extra></extra>',
+      });
+    }
+    Plotly.newPlot(div, traces, {
+      ...plotTheme(), height: 260, margin: { l: 44, r: 12, t: 8, b: 32 },
+      xaxis: { range: xr, gridcolor: css('--line'), zeroline: false, tickformat: '%b %Y' },
+      yaxis: { range: [-5, 105], tickvals: [0, 25, 50, 75, 100], ticksuffix: '%', gridcolor: css('--line'), zeroline: false },
+    }, { displayModeBar: false, responsive: true });
+  }
+}
+
+function drawHeat(entries) {
+  const cols = [], colIdx = {};
+  for (const e of entries) {
+    const k = `${e.comp.key}|${e.level}`;
+    if (!(k in colIdx)) { colIdx[k] = cols.length; cols.push(e); }
+  }
+  cols.sort((a, b) => a.date - b.date || LEVEL_ORDER.indexOf(a.level) - LEVEL_ORDER.indexOf(b.level));
+  cols.forEach((e, i) => colIdx[`${e.comp.key}|${e.level}`] = i);
+  const rows = [];
+  for (const st of STYLES) for (const d of [...DANCES[st], ...new Set(entries.filter(e => e.ev.st === st).flatMap(e => e.ev.d))])
+    if (!rows.some(r => r[0] === st && r[1] === d) && entries.some(e => e.ev.st === st && e.ev.d.includes(d))) rows.push([st, d]);
+  if (!rows.length) return;
+
+  const grid = () => rows.map(() => cols.map(() => null));
+  const zP = grid(), tP = grid(), hP = grid(), zC = grid(), tC = grid(), hC = grid();
+  for (const e of entries) {
+    const c = colIdx[`${e.comp.key}|${e.level}`];
+    e.ev.d.forEach((d, di) => {
+      const r = rows.findIndex(x => x[0] === e.ev.st && x[1] === d);
+      if (r < 0 || (zP[r][c] != null && zP[r][c] >= e.beat)) return;
+      zP[r][c] = e.beat; tP[r][c] = `${ordinal(e.place)} of ${e.N}`;
+      hP[r][c] = `${esc(e.ev.n)}<br>${ordinal(e.place)} of ${e.N}`;
+      const parts = e.rounds.map(rd => `${roundAbbr(rd.name)} ${rd.recalls[di]}${rd.judges !== 5 ? '/' + rd.judges : ''}`);
+      const lines = [];
+      for (let i = 0; i < parts.length; i += 2) lines.push(parts.slice(i, i + 2).join(' · '));
+      if (e.final) lines.push(`final ${ordinal(Math.round(e.final[di]))}`);
+      zC[r][c] = e.cb[di]; tC[r][c] = lines.join('<br>');
+      hC[r][c] = `${esc(e.ev.n)} — ${danceLabel(d)}<br>${e.cb[di] == null ? 'straight final' : e.cb[di].toFixed(0) + '% of marks'}`;
+    });
+  }
+  const wrapName = n => n.split(' ').reduce((lines, w) => {
+    const last = lines.at(-1);
+    if (last && (last + ' ' + w).length <= 13) lines[lines.length - 1] = last + ' ' + w; else lines.push(w);
+    return lines;
+  }, []).slice(0, 2).map(esc).join('<br>');
+  const x = cols.map(e => `${wrapName(shortComp(e.comp.name))}<br>${fmtDate(e.date)}<br><b>${esc(e.level)}</b>`);
+  const y = rows.map(([s, d]) => `${s} ${danceLabel(d)}`);
+  const width = Math.max($('#app').clientWidth - 2, 170 + cols.length * 96);
+  const tall = tC.some(r => r.some(t => t && t.split("<br>").length > 2));
+  const height = 130 + rows.length * (tall ? 50 : 38);
+  const blank = g => g.map(r => r.map(v => v ?? ''));
+  const heat = (div, z, text, hover, title) => Plotly.newPlot(div, [{
+    type: 'heatmap', x, y, z, text: blank(text), customdata: blank(hover), texttemplate: '%{text}',
+    textfont: { size: 11, family: css('--font-data') },
+    colorscale: RDYLGN, zmin: 0, zmax: 100, xgap: 2, ygap: 2, hoverongaps: false,
+    hovertemplate: '%{customdata}<extra></extra>',
+    colorbar: { thickness: 10, ticksuffix: '%', outlinewidth: 0 },
+  }], {
+    ...plotTheme(), width, height, margin: { l: 150, r: 10, t: 110, b: 8 },
+    title: { text: title, x: 0, xanchor: 'left', y: 0.995, yanchor: 'top', font: { family: css('--font-display'), size: 17 } },
+    xaxis: { side: 'top', tickangle: 0, tickfont: { size: 11 }, fixedrange: true, showgrid: false },
+    yaxis: { autorange: 'reversed', fixedrange: true, showgrid: false },
+  }, { displayModeBar: false });
+  heat('heat-place', zP, tP, hP, 'Placement score (1st = 100%, last = 0%)');
+  heat('heat-cb', zC, tC, hC, 'Callbacks: share of judges’ marks');
+}
+
+function compTables(entries) {
+  const byComp = new Map();
+  for (const e of [...entries].reverse()) (byComp.get(e.comp.key) || byComp.set(e.comp.key, []).get(e.comp.key)).push(e);
+  return [...byComp.values()].map(es => {
+    const c = es[0].comp;
+    return el('div', { class: 'comp' },
+      el('div', { class: 'comphead' },
+        el('h3', {}, cleanComp(c.name)), el('span', { class: 'sub' }, fmtDate(es[0].date)),
+        el('a', { href: c.site, target: '_blank', rel: 'noopener' }, 'DSCO site')),
+      el('div', { class: 'scroll' }, el('table', {},
+        el('thead', {}, el('tr', {}, ['Event', 'Partner', 'Place', 'Score', 'Rounds (marks per dance)'].map(h => el('th', {}, h)))),
+        el('tbody', {}, es.sort((a, b) => a.ev.n.localeCompare(b.ev.n)).map(e => el('tr', {},
+          el('td', {}, el('span', { class: 'lvl', style: `background:${levelColor(e.level)}` }, e.level),
+            el('a', { href: `${c.site}/results/${encodeURIComponent(e.ev.n)}`, target: '_blank', rel: 'noopener' }, e.ev.n.replace(e.level + ' ', ''))),
+          el('td', {}, el('span', { class: 'bib' }, e.num), e.partner || '—'),
+          el('td', { class: 'num' }, `${ordinal(e.place)} of ${e.N}`),
+          el('td', { class: 'num' }, `${e.beat.toFixed(0)}%`),
+          el('td', { class: 'rounds' }, roundsText(e)))))))
+    );
+  });
+}
+
+function roundsText(e) {
+  const parts = e.rounds.map(r => el('span', {}, el('b', {}, roundAbbr(r.name)), ' ', r.recalls.join('·'), r.judges !== 5 ? `/${r.judges}` : '', '  '));
+  if (e.final) parts.push(el('span', {}, el('b', {}, 'Final'), ' ', e.final.map(p => ordinal(Math.round(p))).join('·')));
+  return parts.length ? parts : '—';
+}
+
+// ---------------------------------------------------------------- boot
+
+async function boot() {
+  try {
+    [state.comps, state.people] = await Promise.all([getJSON('data/comps.json'), getJSON('data/people.json')]);
+  } catch (e) {
+    $('#status').textContent = 'The results index didn’t load. Reload the page to try again.';
+    return;
+  }
+  const withResults = state.comps.filter(c => c.events);
+  const dated = withResults.map(c => c.date).filter(Boolean).sort();
+  const updated = state.comps.map(c => c.fetched).filter(Boolean).sort().at(-1);
+  $('#coverage').textContent = `${withResults.length} competitions, ${fmtDate(new Date(dated[0]))} to ${fmtDate(new Date(dated.at(-1)))}. ${state.people.length.toLocaleString()} dancers.` +
+    (updated ? ` Updated ${new Date(updated + 'T00:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}.` : '');
+  setupSearch();
+  const fromHash = location.hash.slice(1);
+  const person = (fromHash && state.people.find(p => slug(p[0]) === fromHash)) || state.people.find(p => p[0] === DEFAULT_PERSON) || state.people[0];
+  showPerson(person);
+  const rerender = () => state.person && state.all && render();
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', rerender);
+  new MutationObserver(rerender).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  let t; addEventListener('resize', () => { clearTimeout(t); t = setTimeout(rerender, 200); });
+}
+boot();
+</script>

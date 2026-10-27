@@ -1,0 +1,354 @@
+[
+ {
+  "key": "upenn2023",
+  "name": "UPenn Prelude 2023",
+  "date": "2023-10-08",
+  "site": "https://penn2023-8e69d.web.app",
+  "events": 39,
+  "fetched": "2026-10-27"
+ },
+ {
+  "key": "vss2023",
+  "name": "Vegas Scarlet Signature 2023",
+  "date": "2023-11-04",
+  "site": "https://dsco-vss2023.web.app",
+  "events": 64,
+  "fetched": "2026-10-27"
+ },
+ {
+  "key": "holycross23",
+  "name": "Crusader Classic 2024",
+  "date": "2024-02-18",
+  "site": "https://dsco-holycross23.web.app",
+  "events": 37,
+  "fetched": "2026-10-27"
+ },
+ {
+  "key": "penn2024",
+  "name": "SnowBall @ Penn State '24",
+  "date": "2024-02-23",
+  "site": "https://dsco-penn2024.web.app",
+  "events": 49,
+  "fetched": "2026-10-27"
+ },
+ {
+  "key": "bam2024",
+  "name": "BAM Jam 2024",
+  "date": "2024-03-30",
+  "site": "https://dsco-bam2024.web.app",
+  "events": 57,
+  "fetched": "2026-10-27"
+ },
+ {
+  "key": "cmu24",
+  "name": "Carnegie Classic 2024",
+  "date": "2024-10-11",
+  "site": "https://dsco-cmu24.web.app",
+  "events": 52,
+  "fetched": "2026-10-27"
+ },
+ {
+  "key": "rdf24",
+  "name": "Rochester Dancesport Festival 2024",
+  "date": "2024-10-19",
+  "site": "https://dsco-rdf2024.web.app",
+  "events": 57,
+  "fetched": "2026-10-27"
+ },
+ {
+  "key": "vss24",
+  "name": "Vegas Scarlet Signature",
+  "date": "2024-11-16",
+  "site": "https://vss2024.web.app",
+  "events": 74,
+  "fetched": "2026-10-27"
+ },
+ {
+  "key": "psb25",
+  "name": "Snowball @ Penn State '25",
+  "date": "2025-02-01",
+  "site": "https://dsco-psb25.web.app",
+  "events": 53,
+  "fetched": "2026-10-27"
+ },
+ {
+  "key": "badc25",
+  "name": "Big Apple Dancesport Challenge 2025",
+  "date": "2025-02-15",
+  "site": "https://dsco-badc25.web.app",
+  "events": 68,
+  "fetched": "2026-10-27"
+ },
+ {
+  "key": "holycross25",
+  "name": "Crusader Classic 2025",
+  "date": "2025-02-22",
+  "site": "https://dsco-holycross25.web.app",
+  "events": 44,
+  "fetched": "2026-10-27"
+ },
+ {
+  "key": "rutgers25",
+  "name": "Rutgers DanceSport Competition 2025 - CONCLUDED, COME TO RUTGERS COMPETITION 2026 - https://dsco-rutgers26.web.app/",
+  "date": "2025-03-01",
+  "site": "https://dsco-rutgers.web.app",
+  "events": 53,
+  "fetched": "2026-10-27"
+ },
+ {
+  "key": "bing25",
+  "name": "Binghamton Ballroom Dance Revolution 2025",
+  "date": "2025-03-22",
+  "site": "https://dsco-bing25.web.app",
+  "events": 50,
+  "fetched": "2026-10-27"
+ },
+ {
+  "key": "umass25",
+  "name": "UMASS Minutemen Dancesport Classic 2025",
+  "date": "2025-03-30",
+  "site": "https://dsco-umass2025.web.app",
+  "events": 57,
+  "fetched": "2026-10-27"
+ },
+ {
+  "key": "bamjam2025",
+  "name": "BAM Jam 2025",
+  "date": "2025-04-05",
+  "site": "https://dsco-bamjam2025.web.app",
+  "events": 49,
+  "fetched": "2026-10-27"
+ },
+ {
+  "key": "berkeley25",
+  "name": "Berkeley Classic 2025",
+  "date": "2025-05-03",
+  "site": "https://dsco-berkeley25.web.app",
+  "events": 135,
+  "fetched": "2026-10-27"
+ },
+ {
+  "key": "cmu25",
+  "name": "Carnegie Classic 2025",
+  "date": "2025-10-10",
+  "site": "https://dsco-cmu25.web.app",
+  "events": 53,
+  "fetched": "2026-10-27"
+ },
+ {
+  "key": "ecfb25",
+  "name": "East Coast FireBall 2025",
+  "date": "2025-10-11",
+  "site": "https://dsco-ecfb25.web.app",
+  "events": 55,
+  "fetched": "2026-10-27"
+ },
+ {
+  "key": "harvard25",
+  "name": "Harvard Beginners 2025",
+  "date": "2025-10-19",
+  "site": "https://dsco-harvardbeginners.web.app",
+  "events": 42,
+  "fetched": "2026-10-27"
+ },
+ {
+  "key": "rdf25",
+  "name": "Rochester Dancesport Festival 2025",
+  "date": "2025-10-25",
+  "site": "https://dsco-rdf25.web.app",
+  "events": 54,
+  "fetched": "2026-10-27"
+ },
+ {
+  "key": "brown25",
+  "name": "Brown Ballroom Competition 2025",
+  "date": "2025-10-26",
+  "site": "https://dsco-brown25.web.app",
+  "events": 52,
+  "fetched": "2026-10-27"
+ },
+ {
+  "key": "umassfall25",
+  "name": "UMass Minuteman Dancesport Classic Fall 2025",
+  "date": "2025-11-08",
+  "site": "https://dsco-umassfall25.web.app",
+  "events": 54,
+  "fetched": "2026-10-27"
+ },
+ {
+  "key": "tufts25",
+  "name": "Tufts Ballroom Competition 2025",
+  "date": "2025-11-23",
+  "site": "https://dsco-tufts25.web.app",
+  "events": 51,
+  "fetched": "2026-10-27"
+ },
+ {
+  "key": "princeton25",
+  "name": "Princeton Ballroom Competition 2025",
+  "date": "2025-12-07",
+  "site": "https://dsco-princeton25.web.app",
+  "events": 48,
+  "fetched": "2026-10-27"
+ },
+ {
+  "key": "psusnowball26",
+  "name": "Snowball @ Penn State '26",
+  "date": "2026-02-07",
+  "site": "https://dsco-psusnowball26.web.app",
+  "events": 58,
+  "fetched": "2026-10-27"
+ },
+ {
+  "key": "wpi26",
+  "name": "WPI Ballroom Competition 2026",
+  "date": "2026-02-07",
+  "site": "https://dsco-wpi26.web.app",
+  "events": 55,
+  "fetched": "2026-10-27"
+ },
+ {
+  "key": "badc26",
+  "name": "Big Apple Dancesport Challenge 2026",
+  "date": "2026-02-14",
+  "site": "https://dsco-badc26.web.app",
+  "events": 53,
+  "fetched": "2026-10-27"
+ },
+ {
+  "key": "cascadiaclassic26",
+  "name": "Cascadia Classic 2026 (REGISTRATION TEMPORARILY CLOSED)",
+  "date": "2026-02-21",
+  "site": "https://dsco-cascadiaclassic26.web.app",
+  "events": 0,
+  "fetched": "2026-10-27"
+ },
+ {
+  "key": "rutgers26",
+  "name": "Rutgers Ballroom Competition 2026",
+  "date": "2026-03-07",
+  "site": "https://dsco-rutgers26.web.app",
+  "events": 52,
+  "fetched": "2026-10-27"
+ },
+ {
+  "key": "bing26",
+  "name": "Binghamton Ballroom Dance Revolution 2026",
+  "date": "2026-03-21",
+  "site": "https://dsco-bing26.web.app",
+  "events": 48,
+  "fetched": "2026-10-27"
+ },
+ {
+  "key": "austinopen26",
+  "name": "Austin Open 2026",
+  "date": "2026-04-10",
+  "site": "https://dsco-austinopen26.web.app",
+  "events": 0,
+  "fetched": "2026-10-27"
+ },
+ {
+  "key": "bamjam26",
+  "name": "BAM Jam 2026",
+  "date": "2026-04-11",
+  "site": "https://dsco-bamjam26.web.app",
+  "events": 49,
+  "fetched": "2026-10-27"
+ },
+ {
+  "key": "northeastern26",
+  "name": "Northeastern Ballroom Classic 2026",
+  "date": "2026-04-12",
+  "site": "https://dsco-northeastern26.web.app",
+  "events": 46,
+  "fetched": "2026-10-27"
+ },
+ {
+  "key": "cmu26",
+  "name": "Carnegie Classic 2026",
+  "date": "2026-10-10",
+  "site": "https://dsco-cmu26.web.app",
+  "events": 85,
+  "fetched": "2026-10-27"
+ },
+ {
+  "key": "upennprelude26",
+  "name": "UPenn Prelude 2026",
+  "date": "2026-10-10",
+  "site": "https://dsco-upennprelude26.web.app",
+  "events": 53,
+  "fetched": "2026-10-27"
+ },
+ {
+  "key": "harvard26",
+  "name": "Harvard Invitational 2026",
+  "date": "2026-10-24",
+  "site": "https://dsco-harvard26.web.app",
+  "events": 45,
+  "fetched": "2026-10-27"
+ },
+ {
+  "key": "umass26",
+  "name": "UMass Minuteman Dancesport Classic 2026",
+  "date": "2026-11-07",
+  "site": "https://dsco-umass26.web.app",
+  "events": 0,
+  "fetched": "2026-10-27"
+ },
+ {
+  "key": "tufts26",
+  "name": "Tufts Ballroom Competition 2026",
+  "date": "2026-11-21",
+  "site": "https://dsco-tufts26.web.app",
+  "events": 0,
+  "fetched": "2026-10-27"
+ },
+ {
+  "key": "ecfb26",
+  "name": "East Coast FireBall 2026",
+  "date": "2026-12-05",
+  "site": "https://dsco-ecfb26.web.app",
+  "events": 0,
+  "fetched": "2026-10-27"
+ },
+ {
+  "key": "terrier26",
+  "name": "Terrier Ballroom Competition 2026",
+  "date": "2026-12-06",
+  "site": "https://dsco-terrier26.web.app",
+  "events": 0,
+  "fetched": "2026-10-27"
+ },
+ {
+  "key": "badc27",
+  "name": "Big Apple Dancesport Challenge 2027",
+  "date": "2027-02-20",
+  "site": "https://dsco-badc27.web.app",
+  "events": 0,
+  "fetched": "2026-10-27"
+ },
+ {
+  "key": "brandeis26",
+  "name": "Brandeis Ballroom Competition 2027",
+  "date": "2027-03-14",
+  "site": "https://dsco-brandeis26.web.app",
+  "events": 0,
+  "fetched": "2026-10-27"
+ },
+ {
+  "key": "wpi27",
+  "name": "WPI Ballroom Competition 2027",
+  "date": "2027-03-27",
+  "site": "https://dsco-wpi27.web.app",
+  "events": 0,
+  "fetched": "2026-10-27"
+ },
+ {
+  "key": "northeastern27",
+  "name": "Northeastern Ballroom Classic 2027",
+  "date": "2027-04-11",
+  "site": "https://dsco-northeastern27.web.app",
+  "events": 0,
+  "fetched": "2026-10-27"
+ }
+]
