@@ -32,5 +32,5 @@ python -m http.server -d site 8000 # then open http://localhost:8000
 ## Notes
 
 - This project isn't affiliated with DSCO. Competitions scored elsewhere (O2CM, for example) aren't included.
-- Names are matched exactly, so someone whose name is spelled differently at two competitions shows up twice.
+- Spellings that differ only by accents, capitalization or apostrophes count as one dancer (Faria and Faría, for example). A dancer stays one person across schools, since transfers are common and DSCO records one school per couple. For anything else, `names.txt` merges other spellings or splits two dancers who share a name.
 - To be left out of the index, open an issue or add your name to `opt_out.txt`.

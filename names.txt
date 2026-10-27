@@ -1,0 +1,10 @@
+# Name fixes for the search index. Blank lines and lines starting with # are ignored.
+# Spellings that differ only by accents, capitalization or apostrophes are merged
+# automatically (Faria = Faría, McCrae = Mccrae, O'Brien = O’brien).
+#
+# Merge other spellings of the same dancer; the first one is the name shown:
+#   Nick Smith = Nicholas Smith
+#
+# Split two different dancers who share a name. Entries from the listed school get
+# their own dancer; everything else stays under the plain name:
+#   Alex Kim | Cornell University

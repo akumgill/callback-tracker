@@ -140,7 +140,7 @@ const DEFAULT_PERSON = 'Akum Gill';
 const RDYLGN = ['#a50026', '#d73027', '#f46d43', '#fdae61', '#fee08b', '#ffffbf', '#d9ef8b', '#a6d96a', '#66bd63', '#1a9850', '#006837']
   .map((c, i, a) => [i / (a.length - 1), c]);
 
-const state = { comps: [], people: [], files: {}, person: null, aff: null, entries: [] };
+const state = { comps: [], people: [], names: { alias: {}, split: {} }, files: {}, person: null, aff: null, entries: [] };
 const $ = s => document.querySelector(s);
 const el = (tag, attrs = {}, ...kids) => {
   const n = document.createElement(tag);
@@ -149,8 +149,17 @@ const el = (tag, attrs = {}, ...kids) => {
   return n;
 };
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
-const norm = s => s.trim().replace(/\s+/g, ' ').toLowerCase();
-const slug = s => norm(s).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+// copies of fold / clean_school / person_key in dsco_crawl.py; keep them in step
+const fold = s => s.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replace(/['\u2019`]/g, '')
+  .replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+const JUNK_SCHOOLS = new Set(['', 'unaffiliated', 'na', 'n/a', 'none', 'unknown', 'tba', '-']);
+const cleanSchool = s => { s = (s || '').trim().replace(/\s+/g, ' '); return JUNK_SCHOOLS.has(s.toLowerCase()) ? '' : s; };
+const personKey = (name, school) => {
+  let k = fold(name);
+  k = state.names.alias[k] || k;
+  return school && (state.names.split[k] || []).includes(school) ? `${k} | ${school}` : k;
+};
+const slug = s => fold(s).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 const levelColor = l => (LEVELS[l] || ['#888', 'circle'])[0];
 const fmtDate = d => d.toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
@@ -184,14 +193,15 @@ async function loadComp(i) {
 }
 
 async function entriesFor(person) {
-  const want = norm(person[0]);
+  const want = person[3];
   const comps = await Promise.all(person[2].map(loadComp));
   const out = [];
   for (const comp of comps) {
     const date = new Date(comp.date + 'T00:00:00Z');
     for (const ev of comp.events) {
-      for (const [num, lead, follow, aff, place, recalls, final] of ev.c) {
-        const role = norm(lead) === want ? 'Lead' : norm(follow) === want ? 'Follow' : null;
+      for (const [num, lead, follow, rawAff, place, recalls, final] of ev.c) {
+        const aff = cleanSchool(rawAff);
+        const role = personKey(lead, aff) === want ? 'Lead' : personKey(follow, aff) === want ? 'Follow' : null;
         if (!role) continue;
         const N = Math.max(ev.N, place);
         const level = PROGRESSION.includes(ev.lv) || ev.lv === 'Syllabus' ? ev.lv : (ev.lv || 'Other');
@@ -231,13 +241,13 @@ function ycnPoints(e) {
 // ---------------------------------------------------------------- search
 
 function matches(q) {
-  const words = norm(q).split(' ').filter(Boolean);
+  const words = fold(q).split(' ').filter(Boolean);
   if (!words.length) return [];
   const scored = [];
   for (const p of state.people) {
-    const hay = (p[0] + ' ' + p[1].join(' ')).toLowerCase();
+    const hay = fold(p[0] + ' ' + p[1].join(' '));
     if (words.every(w => hay.includes(w))) {
-      const starts = p[0].toLowerCase().startsWith(words[0]) ? 0 : 1;
+      const starts = fold(p[0]).startsWith(words[0]) ? 0 : 1;
       scored.push([starts, -p[2].length, p]);
     }
   }
@@ -527,7 +537,8 @@ function roundsText(e) {
 
 async function boot() {
   try {
-    [state.comps, state.people] = await Promise.all([getJSON('data/comps.json'), getJSON('data/people.json')]);
+    [state.comps, state.people, state.names] = await Promise.all([getJSON('data/comps.json'), getJSON('data/people.json'),
+      getJSON('data/names.json').catch(() => state.names)]);
   } catch (e) {
     $('#status').textContent = 'The results index didn’t load. Reload the page to try again.';
     return;

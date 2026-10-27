@@ -6,7 +6,9 @@ Firebase Realtime Database. This reads only what DSCO's own results pages show
 (events, marks, saved results, competition name and date); it never reads
 competitor registration records.
 
-Names listed in opt_out.txt (one per line) are left out of the index.
+Names listed in opt_out.txt (one per line) are left out of the index. Spellings
+that differ only by accents, capitalization or apostrophes count as one dancer;
+names.txt handles the rest (merging other spellings, splitting namesakes).
 
 Output, read by site/index.html:
     site/data/comps.json        list of competitions
@@ -26,8 +28,10 @@ import os
 import re
 import sys
 import time
+import unicodedata
 import urllib.parse
 import urllib.request
+from collections import Counter
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, 'site', 'data')
@@ -85,7 +89,50 @@ def opt_outs():
     path = os.path.join(HERE, 'opt_out.txt')
     if not os.path.exists(path):
         return set()
-    return {' '.join(l.split()).lower() for l in open(path) if l.strip() and not l.startswith('#')}
+    return {fold(l) for l in open(path) if l.strip() and not l.startswith('#')}
+
+
+# ---------------------------------------------------------------- names and schools
+# site/index.html has a copy of fold, clean_school and person_key; keep them in step.
+
+JUNK_SCHOOLS = {'', 'unaffiliated', 'na', 'n/a', 'none', 'unknown', 'tba', '-'}
+
+
+def fold(name):
+    """Matching key for a name: no accents, case, apostrophes or punctuation."""
+    n = ''.join(ch for ch in unicodedata.normalize('NFKD', name) if not unicodedata.category(ch).startswith('M'))
+    n = re.sub(r"['’`]", '', n.lower())
+    return ' '.join(re.sub(r'[\W_]+', ' ', n).split())
+
+
+def clean_school(school):
+    school = ' '.join((school or '').split())
+    return '' if school.lower() in JUNK_SCHOOLS else school
+
+
+def name_rules():
+    """names.txt: 'A = B = C' merges spellings (A is shown); 'Name | School' splits a namesake out."""
+    alias, shown, split = {}, {}, {}
+    path = os.path.join(HERE, 'names.txt')
+    for line in open(path) if os.path.exists(path) else []:
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+        if '|' in line:
+            name, school = (x.strip() for x in line.split('|', 1))
+            split.setdefault(fold(name), []).append(clean_school(school))
+        elif '=' in line:
+            names = [x.strip() for x in line.split('=') if x.strip()]
+            shown[fold(names[0])] = names[0]
+            for n in names[1:]:
+                alias[fold(n)] = fold(names[0])
+    return alias, shown, split
+
+
+def person_key(name, school, alias, split):
+    k = fold(name)
+    k = alias.get(k, k)
+    return f'{k} | {school}' if school and school in split.get(k, ()) else k
 
 
 def site_url(key, project):
@@ -307,7 +354,7 @@ def crawl(key, db, project, hidden=frozenset()):
         if e and e['c']:
             for c in e['c']:
                 for i in (1, 2):
-                    if ' '.join(c[i].split()).lower() in hidden:
+                    if fold(c[i]) in hidden:
                         c[i] = ''
             out.append(e)
     return {**base, 'events': sorted(out, key=lambda e: e['n'])}
@@ -354,7 +401,9 @@ def main():
 
 
 def build_people(comps_list):
-    """people.json: [name, [affiliations], [comp indexes in comps.json]] for the search box."""
+    """people.json rows [shown name, [schools], [comp indexes in comps.json], match key] for the search
+    box, and names.json with the names.txt rules the page needs to match entries to a dancer."""
+    alias, shown, split = name_rules()
     people = {}
     for i, comp in enumerate(comps_list):
         path = os.path.join(OUT, f'{comp["key"]}.json')
@@ -362,18 +411,29 @@ def build_people(comps_list):
             continue
         for ev in json.load(open(path))['events']:
             for _, lead, follow, aff, *_ in ev['c']:
+                school = clean_school(aff)
                 for name in (lead, follow):
                     name = ' '.join(name.split())
-                    if not name:
+                    if not fold(name):
                         continue
-                    p = people.setdefault(name, [set(), set()])
-                    if aff:
-                        p[0].add(aff)
-                    p[1].add(i)
-    rows = [[n, sorted(a), sorted(c)] for n, (a, c) in sorted(people.items())]
+                    p = people.setdefault(person_key(name, school, alias, split), [Counter(), set(), set()])
+                    p[0][name] += 1000 + i  # most used spelling; ties go to the most recent
+                    if school:
+                        p[1].add(school)
+                    p[2].add(i)
+    rows = []
+    for key, (spellings, schools, comps) in people.items():
+        base = key.split(' | ')[0]
+        name = shown.get(base) or spellings.most_common(1)[0][0]
+        if ' | ' in key:
+            name = f'{name} ({key.split(" | ", 1)[1]})'
+        rows.append([name, sorted(schools), sorted(comps), key])
+    rows.sort(key=lambda r: r[3])
     with open(os.path.join(OUT, 'people.json'), 'w') as f:
         json.dump(rows, f, separators=(',', ':'))
-    print(f'people.json: {len(rows)} names')
+    with open(os.path.join(OUT, 'names.json'), 'w') as f:
+        json.dump({'alias': alias, 'split': split}, f, separators=(',', ':'))
+    print(f'people.json: {len(rows)} dancers')
 
 
 if __name__ == '__main__':
