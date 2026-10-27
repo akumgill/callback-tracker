@@ -9,7 +9,9 @@ For each dancer it shows:
 - placement over time for each style, with one line per level (Bronze, Silver, Gold, ...)
 - a grid of every dance at every competition: placement, and the share of judges' marks received in each round
 - a table per competition with partner, place, marks per round and per dance, and a link to the DSCO results page
-- approximate YCN proficiency points
+- YCN proficiency points by style and level, and the lowest level the dancer can still enter in each dance
+
+Each school also has a team page: results by competition, the team's placement trend by level, and its roster.
 
 ## How it works
 
@@ -33,4 +35,10 @@ python -m http.server -d site 8000 # then open http://localhost:8000
 
 - This project isn't affiliated with DSCO. Competitions scored elsewhere (O2CM, for example) aren't included.
 - Spellings that differ only by accents, capitalization or apostrophes count as one dancer (Faria and Faría, for example). A dancer stays one person across schools, since transfers are common and DSCO records one school per couple. For anything else, `names.txt` merges other spellings or splits two dancers who share a name.
-- To be left out of the index, open an issue or add your name to `opt_out.txt`.
+- To fix a result, merge or split a dancer, or be left out, use **Request a correction or removal** on any dancer or team page (it opens a GitHub issue form). `opt_out.txt` and `names.txt` hold the fixes.
+
+## For results publishers
+
+Callback Tracker reads only DSCO's public results data (the same data its results pages show), once a day, and re-checks a competition for 30 days after it starts. Every request identifies itself as `callback-tracker/1.0 (+https://github.com/akumgill/callback-tracker)`. It follows robots.txt rules for `User-agent: callback-tracker` on every host it reads, never signs in, and never reads registration records. Each competition links back to its original results.
+
+To stop it, change how your results are used, or have something removed, [open a request](https://github.com/akumgill/callback-tracker/issues/new?template=correction.yml).

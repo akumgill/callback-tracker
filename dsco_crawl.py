@@ -6,6 +6,9 @@ Firebase Realtime Database. This reads only what DSCO's own results pages show
 (events, marks, saved results, competition name and date); it never reads
 competitor registration records.
 
+It identifies itself (USER_AGENT below) and follows robots.txt rules for
+`User-agent: callback-tracker` on every host it reads.
+
 Names listed in opt_out.txt (one per line) are left out of the index. Spellings
 that differ only by accents, capitalization or apostrophes count as one dancer;
 names.txt handles the rest (merging other spellings, splitting namesakes).
@@ -31,6 +34,7 @@ import time
 import unicodedata
 import urllib.parse
 import urllib.request
+import urllib.robotparser
 from collections import Counter
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -42,7 +46,53 @@ FRESH_DAYS = 30
 USER_AGENT = 'callback-tracker/1.0 (+https://github.com/akumgill/callback-tracker)'
 
 
+_robots = {}
+
+
+def robots_rules(text, agent='callback-tracker'):
+    """(allow, pattern) rules from robots.txt that apply to us: our own group, else the * group."""
+    groups, agents, rules = [], [], []
+    for line in text.splitlines():
+        key, _, value = line.split('#', 1)[0].partition(':')
+        key, value = key.strip().lower(), value.strip()
+        if key == 'user-agent':
+            if rules:
+                groups.append((agents, rules))
+                agents, rules = [], []
+            agents.append(value.lower())
+        elif key in ('allow', 'disallow') and agents:
+            rules.append((key == 'allow', value))
+    if agents:
+        groups.append((agents, rules))
+    ours = [r for a, r in groups if any(x != '*' and x in agent for x in a)]
+    return [rule for g in (ours or [r for a, r in groups if '*' in a]) for rule in g]
+
+
+def robots_allow(url):
+    """robots.txt check (with * and $ wildcards; the longest matching rule wins), one fetch per host."""
+    parts = urllib.parse.urlsplit(url)
+    base = f'{parts.scheme}://{parts.netloc}'
+    if base not in _robots:
+        try:
+            req = urllib.request.Request(base + '/robots.txt', headers={'User-Agent': USER_AGENT})
+            with urllib.request.urlopen(req, timeout=20) as r:
+                _robots[base] = robots_rules(r.read().decode(errors='replace'))
+        except Exception:  # no robots.txt: no rules
+            _robots[base] = []
+    path = (parts.path or '/') + (f'?{parts.query}' if parts.query else '')
+    best = None
+    for allow, pattern in _robots[base]:
+        regex = re.escape(pattern).replace(r'\*', '.*')
+        regex = regex[:-2] + '$' if regex.endswith(r'\$') else regex
+        if pattern and re.match(regex, path) and (best is None or len(pattern) > len(best[1])
+                                                  or (len(pattern) == len(best[1]) and allow)):
+            best = (allow, pattern)
+    return best is None or best[0]
+
+
 def get(url, timeout=60):
+    if not robots_allow(url):
+        raise PermissionError(f'robots.txt disallows {url}')
     req = urllib.request.Request(url, headers={'User-Agent': USER_AGENT})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return r.read().decode()
@@ -111,14 +161,19 @@ def clean_school(school):
 
 
 def name_rules():
-    """names.txt: 'A = B = C' merges spellings (A is shown); 'Name | School' splits a namesake out."""
-    alias, shown, split = {}, {}, {}
+    """names.txt: 'A = B = C' merges spellings (A is shown); 'Name | School' splits a namesake out;
+    'school: A = B' merges school names (A is shown)."""
+    alias, shown, split, schools = {}, {}, {}, {}
     path = os.path.join(HERE, 'names.txt')
     for line in open(path) if os.path.exists(path) else []:
         line = line.strip()
         if not line or line.startswith('#'):
             continue
-        if '|' in line:
+        if line.lower().startswith('school:'):
+            names = [x.strip() for x in line[7:].split('=') if x.strip()]
+            for n in names:
+                schools[fold(n)] = names[0]
+        elif '|' in line:
             name, school = (x.strip() for x in line.split('|', 1))
             split.setdefault(fold(name), []).append(clean_school(school))
         elif '=' in line:
@@ -126,7 +181,7 @@ def name_rules():
             shown[fold(names[0])] = names[0]
             for n in names[1:]:
                 alias[fold(n)] = fold(names[0])
-    return alias, shown, split
+    return alias, shown, split, schools
 
 
 def person_key(name, school, alias, split):
@@ -402,29 +457,41 @@ def main():
 
 def build_people(comps_list):
     """people.json rows [shown name, [schools], [comp indexes in comps.json], match key] for the search
-    box, and names.json with the names.txt rules the page needs to match entries to a dancer."""
-    alias, shown, split = name_rules()
-    people = {}
+    box; names.json with the rules the page needs to match entries to a dancer and a school; and
+    schools.json (school -> comp indexes) for team pages."""
+    alias, shown, split, school_rules = name_rules()
+    entries = []
     for i, comp in enumerate(comps_list):
         path = os.path.join(OUT, f'{comp["key"]}.json')
-        if not os.path.exists(path):
-            continue
-        for ev in json.load(open(path))['events']:
-            for _, lead, follow, aff, *_ in ev['c']:
-                school = clean_school(aff)
-                for name in (lead, follow):
-                    name = ' '.join(name.split())
-                    if not fold(name):
-                        continue
-                    p = people.setdefault(person_key(name, school, alias, split), [Counter(), set(), set()])
-                    p[0][name] += 1000 + i  # most used spelling; ties go to the most recent
-                    if school:
-                        p[1].add(school)
-                    p[2].add(i)
+        if os.path.exists(path):
+            entries += [(i, c[1], c[2], clean_school(c[3])) for ev in json.load(open(path))['events'] for c in ev['c']]
+
+    # one spelling per school: names.txt first, else the most used spelling of the same letters
+    spellings = {}
+    for _, _, _, school in entries:
+        if school:
+            spellings.setdefault(fold(school), Counter())[school] += 1
+    school_map = {k: school_rules.get(k) or c.most_common(1)[0][0] for k, c in spellings.items()}
+    split = {k: [school_map.get(fold(s), s) for s in v] for k, v in split.items()}
+
+    people, teams = {}, {}
+    for i, lead, follow, school in entries:
+        school = school_map.get(fold(school), school) if school else ''
+        if school:
+            teams.setdefault(school, set()).add(i)
+        for name in (lead, follow):
+            name = ' '.join(name.split())
+            if not fold(name):
+                continue
+            p = people.setdefault(person_key(name, school, alias, split), [Counter(), set(), set()])
+            p[0][name] += 1000 + i  # most used spelling; ties go to the most recent
+            if school:
+                p[1].add(school)
+            p[2].add(i)
     rows = []
-    for key, (spellings, schools, comps) in people.items():
+    for key, (names, schools, comps) in people.items():
         base = key.split(' | ')[0]
-        name = shown.get(base) or spellings.most_common(1)[0][0]
+        name = shown.get(base) or names.most_common(1)[0][0]
         if ' | ' in key:
             name = f'{name} ({key.split(" | ", 1)[1]})'
         rows.append([name, sorted(schools), sorted(comps), key])
@@ -432,8 +499,11 @@ def build_people(comps_list):
     with open(os.path.join(OUT, 'people.json'), 'w') as f:
         json.dump(rows, f, separators=(',', ':'))
     with open(os.path.join(OUT, 'names.json'), 'w') as f:
-        json.dump({'alias': alias, 'split': split}, f, separators=(',', ':'))
-    print(f'people.json: {len(rows)} dancers')
+        json.dump({'alias': alias, 'split': split, 'school': {k: v for k, v in school_map.items()}},
+                  f, separators=(',', ':'))
+    with open(os.path.join(OUT, 'schools.json'), 'w') as f:
+        json.dump({t: sorted(c) for t, c in sorted(teams.items())}, f, separators=(',', ':'))
+    print(f'people.json: {len(rows)} dancers; schools.json: {len(teams)} teams')
 
 
 if __name__ == '__main__':

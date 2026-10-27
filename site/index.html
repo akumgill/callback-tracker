@@ -90,6 +90,13 @@ tr:last-child td { border-bottom: 0; }
 .points td.none { color: var(--muted); }
 .points .out { color: var(--accent); font-weight: 600; }
 .points .allowed { min-width: 15em; }
+.fine { font-size: 13px; }
+.fine a, footer a, .team-link { color: var(--accent); }
+.eyebrow .team-link { color: inherit; text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 3px; }
+details summary { cursor: pointer; color: var(--accent); white-space: nowrap; }
+ul.finals { margin: 6px 0 0; padding-left: 18px; font-size: 13px; }
+ul.finals li { margin: 2px 0; }
+footer code { font-family: var(--font-data); font-size: 12px; }
 .points .allowed div { font-size: 13px; line-height: 1.9; }
 footer .wrap { padding-block: 0 40px; color: var(--muted); font-size: 13px; display: grid; gap: 4px; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
@@ -115,6 +122,7 @@ footer .wrap { padding-block: 0 40px; color: var(--muted); font-size: 13px; disp
   <div class="wrap">
     <span id="coverage"></span>
     <span>Results come from the public results pages of competitions run on DSCO. This page isn't affiliated with DSCO. Competitions scored elsewhere (O2CM, for example) aren't included.</span>
+    <span>For results publishers: Callback Tracker reads DSCO’s public results data once a day. It identifies itself as callback-tracker/1.0 with a link to <a href="https://github.com/akumgill/callback-tracker">this project</a>, follows robots.txt rules for <code>User-agent: callback-tracker</code>, and never signs in or reads registration records. To stop it, change how results are used, or have something removed, <a href="https://github.com/akumgill/callback-tracker/issues/new?template=correction.yml">open a request</a>.</span>
     <span>Placement score = share of the other couples you finished ahead of, (couples − place) ÷ (couples − 1): 1st is 100%, last is 0%. YCN points follow the single-ladder table (Bronze → Championship): 1st/2nd/3rd earn 3/2/1 at the level, 6/4/2 one level down, and 7 below that; 4th–6th earn 1, 2 and 7 when there was a quarterfinal. Events need at least a semifinal.</span>
   </div>
 </footer>
@@ -136,11 +144,13 @@ const DANCES = {
   Rhythm: ['ChaCha', 'Rumba', 'Swing', 'Bolero', 'Mambo'],
 };
 const DEFAULT_PERSON = 'Akum Gill';
+const REPO = 'https://github.com/akumgill/callback-tracker';
 // ColorBrewer RdYlGn (Plotly.js has no built-in by that name)
 const RDYLGN = ['#a50026', '#d73027', '#f46d43', '#fdae61', '#fee08b', '#ffffbf', '#d9ef8b', '#a6d96a', '#66bd63', '#1a9850', '#006837']
   .map((c, i, a) => [i / (a.length - 1), c]);
 
-const state = { comps: [], people: [], names: { alias: {}, split: {} }, files: {}, person: null, aff: null, entries: [] };
+const state = { comps: [], people: [], names: { alias: {}, split: {} }, schools: {}, teams: [], files: {},
+  view: 'person', person: null, aff: null, entries: [], team: null, teamEntries: [] };
 const $ = s => document.querySelector(s);
 const el = (tag, attrs = {}, ...kids) => {
   const n = document.createElement(tag);
@@ -153,7 +163,10 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;',
 const fold = s => s.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replace(/['\u2019`]/g, '')
   .replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 const JUNK_SCHOOLS = new Set(['', 'unaffiliated', 'na', 'n/a', 'none', 'unknown', 'tba', '-']);
-const cleanSchool = s => { s = (s || '').trim().replace(/\s+/g, ' '); return JUNK_SCHOOLS.has(s.toLowerCase()) ? '' : s; };
+const cleanSchool = s => {
+  s = (s || '').trim().replace(/\s+/g, ' ');
+  return JUNK_SCHOOLS.has(s.toLowerCase()) ? '' : (state.names.school?.[fold(s)] || s);
+};
 const personKey = (name, school) => {
   let k = fold(name);
   k = state.names.alias[k] || k;
@@ -186,6 +199,8 @@ async function getJSON(path) {
   return r.json();
 }
 
+const levelOf = ev => PROGRESSION.includes(ev.lv) || ev.lv === 'Syllabus' ? ev.lv : (ev.lv || 'Other');
+
 async function loadComp(i) {
   const c = state.comps[i];
   state.files[c.key] ??= getJSON(`data/${c.key}.json`);
@@ -204,7 +219,7 @@ async function entriesFor(person) {
         const role = personKey(lead, aff) === want ? 'Lead' : personKey(follow, aff) === want ? 'Follow' : null;
         if (!role) continue;
         const N = Math.max(ev.N, place);
-        const level = PROGRESSION.includes(ev.lv) || ev.lv === 'Syllabus' ? ev.lv : (ev.lv || 'Other');
+        const level = levelOf(ev);
         const rounds = ev.r.map((name, k) => ({ name, judges: ev.j[k], recalls: recalls[k] })).filter(r => r.recalls);
         out.push({
           comp, date, ev, num, aff, place, N, final, rounds, level, role,
@@ -251,6 +266,10 @@ function matches(q) {
       scored.push([starts, -p[2].length, p]);
     }
   }
+  for (const t of state.teams) {
+    const hay = fold(t.team);
+    if (words.every(w => hay.includes(w))) scored.push([hay.startsWith(words[0]) ? 0 : 0.5, -t.dancers, t]);
+  }
   return scored.sort((a, b) => a[0] - b[0] || a[1] - b[1]).slice(0, 10).map(s => s[2]);
 }
 
@@ -262,11 +281,12 @@ function setupSearch() {
     list.replaceChildren(...items.map((p, i) => el('li', {
       role: 'option', id: `opt-${i}`, 'aria-selected': String(i === active),
       onmousedown: ev => { ev.preventDefault(); choose(p); },
-    }, el('span', {}, p[0]), el('span', { class: 'aff' }, p[1].join(', ') || '—'))));
+    }, p.team ? [el('span', {}, p.team), el('span', { class: 'aff' }, `Team · ${p.dancers} dancers`)]
+      : [el('span', {}, p[0]), el('span', { class: 'aff' }, p[1].join(', ') || '—')])));
     list.hidden = !items.length;
     box.setAttribute('aria-expanded', String(!!items.length));
   };
-  const choose = p => { q.value = ''; close(); q.blur(); showPerson(p); };
+  const choose = p => { q.value = ''; close(); q.blur(); p.team ? showTeam(p.team) : showPerson(p); };
   q.addEventListener('input', () => { items = matches(q.value); active = items.length ? 0 : -1; paint(); });
   q.addEventListener('keydown', ev => {
     if (list.hidden) return;
@@ -282,10 +302,23 @@ function setupSearch() {
 
 // ---------------------------------------------------------------- views
 
+const correctionLink = (subject, label = 'Request a correction or removal') => el('a', {
+  href: `${REPO}/issues/new?template=correction.yml&title=${encodeURIComponent('Correction: ' + subject)}` +
+    `&dancer=${encodeURIComponent(subject)}&page=${encodeURIComponent(location.href)}`,
+  target: '_blank', rel: 'noopener',
+}, label);
+
+const teamLink = team => el('a', { class: 'team-link', href: '#team-' + slug(team),
+  onclick: ev => { ev.preventDefault(); showTeam(team); } }, team);
+
+// a new history entry per page, so Back works; nothing when the URL already matches
+const setHash = h => { try { if (location.hash !== h) history.pushState(null, '', h); } catch (e) {} };
+
 async function showPerson(person, aff = null) {
+  state.view = 'person';
   state.person = person;
   state.aff = aff;
-  try { history.replaceState(null, '', '#' + slug(person[0])); } catch (e) {}
+  setHash('#' + slug(person[0]));
   $('#app').replaceChildren(el('p', { class: 'status' }, `Loading ${person[0]}…`));
   state.all = await entriesFor(person);
   render();
@@ -313,7 +346,7 @@ function render() {
   const partners = [...new Set(entries.map(e => e.partner).filter(Boolean))];
 
   const head = el('section', { class: 'person' },
-    el('div', { class: 'eyebrow' }, affs.join(' · ') || 'Dancer'),
+    el('div', { class: 'eyebrow' }, affs.length ? affs.flatMap((a, i) => [i ? ' · ' : '', teamLink(a)]) : 'Dancer'),
     el('h1', {}, person[0]),
     affs.length > 1 ? el('div', { class: 'chips' },
       [null, ...affs].map(a => el('button', { class: 'chip', 'aria-pressed': String(state.aff === a), onclick: () => { state.aff = a; render(); } }, a || 'All schools'))) : null,
@@ -324,6 +357,7 @@ function render() {
       stat(ordinal(best), 'best placement'),
       stat(latest.level, `level at ${shortComp(latest.comp.name)}`)),
     partners.length ? el('p', { class: 'sub' }, `Danced with ${partners.join(', ')}.`) : null,
+    el('p', { class: 'sub fine' }, 'Something wrong, or want to be left out? ', correctionLink(person[0]), '.'),
   );
 
   const trend = el('section', {},
@@ -387,6 +421,115 @@ function pointsTable(entries) {
     el('div', { class: 'scroll' }, el('table', { class: 'points' },
       el('thead', {}, el('tr', {}, el('th', {}, 'Style'), levels.map(l => el('th', {}, el('span', { class: 'lvl', style: `background:${levelColor(l)}` }, l))), el('th', {}, 'Lowest level allowed'))),
       el('tbody', {}, styles.map(st => el('tr', {}, el('th', { scope: 'row' }, st), levels.map(l => cell(st, l)), allowed(st)))))));
+}
+
+// ---------------------------------------------------------------- teams
+
+async function showTeam(team) {
+  state.view = 'team';
+  state.team = team;
+  setHash('#team-' + slug(team));
+  $('#app').replaceChildren(el('p', { class: 'status' }, `Loading ${team}…`));
+  state.teamEntries = await teamEntries(team);
+  renderTeam();
+  window.scrollTo(0, 0);
+}
+
+// every couple entry registered to the school
+async function teamEntries(team) {
+  const comps = await Promise.all((state.schools[team] || []).map(loadComp));
+  const out = [];
+  for (const comp of comps) {
+    const date = new Date(comp.date + 'T00:00:00Z');
+    for (const ev of comp.events) {
+      for (const [num, lead, follow, rawAff, place, recalls, final] of ev.c) {
+        if (cleanSchool(rawAff) !== team) continue;
+        const N = Math.max(ev.N, place);
+        out.push({ comp, date, ev, num, lead, follow, place, N, final, level: levelOf(ev),
+          partner: [lead, follow].filter(Boolean).join(' & '), beat: N > 1 ? (N - place) / (N - 1) * 100 : 100 });
+      }
+    }
+  }
+  return out.sort((a, b) => a.date - b.date || a.ev.n.localeCompare(b.ev.n));
+}
+
+function renderTeam() {
+  const team = state.team, entries = state.teamEntries, app = $('#app');
+  if (!entries.length) {
+    app.replaceChildren(el('p', { class: 'empty' }, `No DSCO results found for ${team}.`));
+    return;
+  }
+  const byKey = new Map(state.people.map(p => [p[3], p]));
+  const roster = new Map();
+  for (const e of entries) {
+    for (const name of [e.lead, e.follow]) {
+      if (!fold(name)) continue;
+      const key = personKey(name, team);
+      if (!roster.has(key)) roster.set(key, { key, name: byKey.get(key)?.[0] || name, es: [] });
+      roster.get(key).es.push(e);
+    }
+  }
+  const people = [...roster.values()].map(r => {
+    const last = r.es.at(-1);
+    const levels = r.es.filter(e => e.comp === last.comp && PROGRESSION.includes(e.level)).map(e => e.level);
+    return { ...r, last, events: r.es.length, finals: r.es.filter(e => e.final).length,
+      best: Math.min(...r.es.map(e => e.place)),
+      level: levels.sort((a, b) => PROGRESSION.indexOf(b) - PROGRESSION.indexOf(a))[0] || last.level };
+  }).sort((a, b) => b.last.date - a.last.date || b.events - a.events);
+
+  const comps = [...new Set(entries.map(e => e.comp))];
+  const head = el('section', { class: 'person' },
+    el('div', { class: 'eyebrow' }, 'Team'),
+    el('h1', {}, team),
+    el('div', { class: 'stats' },
+      stat(comps.length, comps.length === 1 ? 'competition' : 'competitions'),
+      stat(people.length, 'dancers'),
+      stat(entries.length, 'events entered'),
+      stat(entries.filter(e => e.final).length, 'finals'),
+      stat(entries.filter(e => e.place === 1).length, 'event wins')),
+    el('p', { class: 'sub fine' }, 'Counts every couple entry registered to this team. Something wrong? ', correctionLink(team), '.'));
+
+  const trend = el('section', {},
+    el('h2', {}, 'Team placement over time'),
+    el('p', { class: 'sub' }, 'Each mark is one couple in one event. Each line follows one level through the team’s average at every competition.'),
+    levelLegend(entries),
+    el('div', { class: 'trend', id: 'trend' }));
+
+  const compRows = [...comps].reverse().map(c => {
+    const es = entries.filter(e => e.comp === c);
+    const finals = es.filter(e => e.final).sort((a, b) => a.place - b.place || a.ev.n.localeCompare(b.ev.n));
+    const avg = es.reduce((s, e) => s + e.beat, 0) / es.length;
+    return el('tr', {},
+      el('td', {}, el('a', { href: c.site, target: '_blank', rel: 'noopener' }, cleanComp(c.name))),
+      el('td', { class: 'num' }, fmtDate(es[0].date)),
+      el('td', { class: 'num' }, es.length),
+      el('td', { class: 'num' }, es.filter(e => e.place === 1).length),
+      el('td', { class: 'num' }, `${avg.toFixed(0)}%`),
+      el('td', {}, finals.length ? el('details', {}, el('summary', {}, `${finals.length} ${finals.length === 1 ? 'final' : 'finals'}`),
+        el('ul', { class: 'finals' }, finals.map(e => el('li', {}, el('b', {}, ordinal(e.place)), ' ',
+          el('span', { class: 'lvl', style: `background:${levelColor(e.level)}` }, e.level), e.ev.n.replace(e.level + ' ', ''), ' — ', e.partner))))
+        : el('span', { class: 'sub' }, 'none')));
+  });
+  const compTable = el('section', {}, el('h2', {}, 'Results by competition'),
+    el('div', { class: 'scroll' }, el('table', {},
+      el('thead', {}, el('tr', {}, ['Competition', 'Date', 'Entries', 'Wins', 'Avg score', 'Finals'].map(h => el('th', {}, h)))),
+      el('tbody', {}, compRows))));
+
+  const rosterTable = el('section', {}, el('h2', {}, 'Roster'),
+    el('p', { class: 'sub' }, 'Everyone who danced an event registered to this team, most recently active first.'),
+    el('div', { class: 'scroll' }, el('table', {},
+      el('thead', {}, el('tr', {}, ['Dancer', 'Events', 'Finals', 'Best', 'Level', 'Last competed'].map(h => el('th', {}, h)))),
+      el('tbody', {}, people.map(r => {
+        const row = byKey.get(r.key);
+        return el('tr', {},
+          el('td', {}, row ? el('a', { href: '#' + slug(row[0]), onclick: ev => { ev.preventDefault(); showPerson(row); window.scrollTo(0, 0); } }, r.name) : r.name),
+          el('td', { class: 'num' }, r.events), el('td', { class: 'num' }, r.finals), el('td', { class: 'num' }, ordinal(r.best)),
+          el('td', {}, el('span', { class: 'lvl', style: `background:${levelColor(r.level)}` }, r.level)),
+          el('td', {}, `${shortComp(r.last.comp.name)}, ${fmtDate(r.last.date)}`));
+      })))));
+
+  app.replaceChildren(head, trend, compTable, rosterTable);
+  drawTrend(entries);
 }
 
 const stat = (value, label) => el('div', { class: 'stat' }, el('b', {}, value), el('span', { class: 'sub' }, label));
@@ -535,10 +678,22 @@ function roundsText(e) {
 
 // ---------------------------------------------------------------- boot
 
+// #team-<school> or #<dancer>; anything else opens the default dancer
+function route() {
+  const h = location.hash.slice(1);
+  const team = h.startsWith('team-') && Object.keys(state.schools).find(t => 'team-' + slug(t) === h);
+  if (team) {
+    if (state.view !== 'team' || state.team !== team) showTeam(team);
+    return;
+  }
+  const person = (h && state.people.find(p => slug(p[0]) === h)) || state.people.find(p => p[0] === DEFAULT_PERSON) || state.people[0];
+  if (state.view !== 'person' || state.person !== person) showPerson(person);
+}
+
 async function boot() {
   try {
-    [state.comps, state.people, state.names] = await Promise.all([getJSON('data/comps.json'), getJSON('data/people.json'),
-      getJSON('data/names.json').catch(() => state.names)]);
+    [state.comps, state.people, state.names, state.schools] = await Promise.all([getJSON('data/comps.json'), getJSON('data/people.json'),
+      getJSON('data/names.json').catch(() => state.names), getJSON('data/schools.json').catch(() => ({}))]);
   } catch (e) {
     $('#status').textContent = 'The results index didn’t load. Reload the page to try again.';
     return;
@@ -548,11 +703,13 @@ async function boot() {
   const updated = state.comps.map(c => c.fetched).filter(Boolean).sort().at(-1);
   $('#coverage').textContent = `${withResults.length} competitions, ${fmtDate(new Date(dated[0]))} to ${fmtDate(new Date(dated.at(-1)))}. ${state.people.length.toLocaleString()} dancers.` +
     (updated ? ` Updated ${new Date(updated + 'T00:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}.` : '');
+  const dancers = {};
+  for (const p of state.people) for (const t of p[1]) dancers[t] = (dancers[t] || 0) + 1;
+  state.teams = Object.keys(state.schools).map(team => ({ team, dancers: dancers[team] || 0 }));
   setupSearch();
-  const fromHash = location.hash.slice(1);
-  const person = (fromHash && state.people.find(p => slug(p[0]) === fromHash)) || state.people.find(p => p[0] === DEFAULT_PERSON) || state.people[0];
-  showPerson(person);
-  const rerender = () => state.person && state.all && render();
+  route();
+  addEventListener('hashchange', route);
+  const rerender = () => state.view === 'team' ? state.teamEntries.length && renderTeam() : state.person && state.all && render();
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', rerender);
   new MutationObserver(rerender).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
   let t; addEventListener('resize', () => { clearTimeout(t); t = setTimeout(rerender, 200); });

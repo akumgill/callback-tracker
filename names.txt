@@ -8,3 +8,19 @@
 # Split two different dancers who share a name. Entries from the listed school get
 # their own dancer; everything else stays under the plain name:
 #   Alex Kim | Cornell University
+#
+# Merge school names that are the same team; the first one is the name shown.
+# Different capitalizations of the same name merge automatically.
+#   school: Harvard University = Harvard
+school: Harvard University = Harvard
+school: Brown University = Brown
+school: Brandeis University = Brandeis
+school: Hofstra University = Hofstra
+school: Rutgers University = Rutgers
+school: Roger Williams University = Roger Williams
+school: Emory University = Emory
+school: Stanford University = Stanford
+school: Ohio State University = The Ohio State University
+school: University of Wisconsin-Madison = University of Wisconsin at Madison = University Wisconsin Madison
+school: University of California, Santa Cruz = university of california santa cruz
+school: Beau Monde Ballroom = Beau Monde

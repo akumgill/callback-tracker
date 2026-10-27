@@ -1,0 +1,33 @@
+name: Correction or removal
+description: Fix a result, merge or split a dancer, or ask to be left out of the tracker
+title: "Correction: "
+labels: [correction]
+body:
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What do you need?
+      options:
+        - Fix a wrong result
+        - Merge two spellings of the same dancer
+        - Split two dancers who share a name
+        - Leave me out of the tracker
+        - I publish results and want to change how they're used
+    validations:
+      required: true
+  - type: input
+    id: dancer
+    attributes:
+      label: Dancer, team or competition
+      description: As it appears on the tracker.
+    validations:
+      required: true
+  - type: input
+    id: page
+    attributes:
+      label: Tracker page link
+  - type: textarea
+    id: details
+    attributes:
+      label: Details
+      description: What's wrong and what it should be. A link to the original results helps.
