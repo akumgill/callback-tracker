@@ -88,6 +88,9 @@ tr:last-child td { border-bottom: 0; }
 .points td b { font-family: var(--font-display); font-size: 22px; font-variant-numeric: tabular-nums; }
 .points .per { font-size: 12px; color: var(--muted); white-space: nowrap; }
 .points td.none { color: var(--muted); }
+.points .out { color: var(--accent); font-weight: 600; }
+.points .allowed { min-width: 15em; }
+.points .allowed div { font-size: 13px; line-height: 1.9; }
 footer .wrap { padding-block: 0 40px; color: var(--muted); font-size: 13px; display: grid; gap: 4px; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
@@ -112,7 +115,7 @@ footer .wrap { padding-block: 0 40px; color: var(--muted); font-size: 13px; disp
   <div class="wrap">
     <span id="coverage"></span>
     <span>Results come from the public results pages of competitions run on DSCO. This page isn't affiliated with DSCO. Competitions scored elsewhere (O2CM, for example) aren't included.</span>
-    <span>Placement score = share of the other couples you finished ahead of, (couples − place) ÷ (couples − 1): 1st is 100%, last is 0%. Points are approximate YCN proficiency points: 3/2/1 for 1st–3rd, plus 1 for 4th–6th when the event had a quarterfinal.</span>
+    <span>Placement score = share of the other couples you finished ahead of, (couples − place) ÷ (couples − 1): 1st is 100%, last is 0%. YCN points follow the single-ladder table (Bronze → Championship): 1st/2nd/3rd earn 3/2/1 at the level, 6/4/2 one level down, and 7 below that; 4th–6th earn 1, 2 and 7 when there was a quarterfinal. Events need at least a semifinal.</span>
   </div>
 </footer>
 
@@ -209,9 +212,20 @@ async function entriesFor(person) {
   return out.sort((a, b) => a.date - b.date || a.ev.n.localeCompare(b.ev.n));
 }
 
+// YCN proficiency points, per dance in the event, as {level: points}. A placement scores at its own
+// level, double one level down, and 7 (enough to point out) at every level below that. The event needs
+// at least a semifinal; 4th-6th count only when there was a quarterfinal. Syllabus events count at Bronze.
+const YCN_LADDER = ['Bronze', 'Silver', 'Gold', 'Novice', 'Prechamp', 'Championship'];
+const YCN_TABLE = { 1: [3, 6, 7], 2: [2, 4, 7], 3: [1, 2, 7], 4: [1, 2, 7], 5: [1, 2, 7], 6: [1, 2, 7] };
+const POINT_OUT = 7;
+
 function ycnPoints(e) {
-  if (e.place <= 3) return 4 - e.place;
-  return e.place <= 6 && e.hadQF ? 1 : 0;
+  const top = YCN_LADDER.indexOf(e.level === 'Syllabus' ? 'Bronze' : e.level);
+  const row = YCN_TABLE[e.place];
+  if (top < 0 || !row || e.ev.r.length < 2 || (e.place > 3 && !e.hadQF)) return {};
+  const out = {};
+  for (let k = 0; k <= top; k++) out[YCN_LADDER[top - k]] = row[Math.min(k, 2)];
+  return out;
 }
 
 // ---------------------------------------------------------------- search
@@ -323,26 +337,46 @@ function render() {
 
 // YCN points per style (rows) and syllabus level (columns); points count once per dance in the event
 function pointsTable(entries) {
-  const prog = entries.filter(e => PROGRESSION.includes(e.level));
-  const levels = PROGRESSION.filter(l => prog.some(e => e.level === l));
-  const styles = STYLES.filter(s => prog.some(e => e.ev.st === s));
-  if (!levels.length) return null;
+  // points[style][level][dance], including points carried down from higher levels
+  const points = {};
+  for (const e of entries) {
+    for (const [level, p] of Object.entries(ycnPoints(e))) {
+      for (const d of e.ev.d) {
+        const byDance = ((points[e.ev.st] ??= {})[level] ??= {});
+        byDance[d] = (byDance[d] || 0) + p;
+      }
+    }
+  }
+  const danced = new Set(entries.map(e => e.level === 'Syllabus' ? 'Bronze' : e.level));
+  const levels = YCN_LADDER.filter(l => danced.has(l) || STYLES.some(s => points[s]?.[l]));
+  const styles = STYLES.filter(s => entries.some(e => e.ev.st === s && YCN_LADDER.includes(e.level === 'Syllabus' ? 'Bronze' : e.level)));
+  if (!levels.length || !styles.length) return null;
   const cell = (style, level) => {
-    const es = prog.filter(e => e.ev.st === style && e.level === level);
-    if (!es.length) return el('td', { class: 'none' }, '—');
-    const per = {};
-    for (const e of es) for (const d of e.ev.d) per[d] = (per[d] || 0) + ycnPoints(e);
+    const per = points[style]?.[level];
+    if (!per) return el('td', { class: 'none' }, '0');
     const total = Object.values(per).reduce((a, b) => a + b, 0);
-    const order = [...DANCES[style], ...Object.keys(per)];
-    const parts = [...new Set(order)].filter(d => per[d]).map(d => `${danceLabel(d)} ${per[d]}`);
-    return el('td', {}, el('b', {}, total), parts.length ? el('div', { class: 'per' }, parts.join(' · ')) : null);
+    const order = [...new Set([...DANCES[style], ...Object.keys(per)])].filter(d => per[d]);
+    return el('td', {}, el('b', {}, total), el('div', { class: 'per' }, order.flatMap((d, i) => [i ? ' · ' : '',
+      per[d] >= POINT_OUT ? el('strong', { class: 'out', title: 'Pointed out of this dance at this level' }, `${danceLabel(d)} ${per[d]}`) : `${danceLabel(d)} ${per[d]}`])));
+  };
+  // lowest level still open per dance: one above the highest level with 7+ points (cascades down)
+  const allowed = style => {
+    const groups = {};
+    for (const d of DANCES[style]) {
+      let i = 0;
+      YCN_LADDER.forEach((l, k) => { if ((points[style]?.[l]?.[d] || 0) >= POINT_OUT) i = Math.max(i, k + 1); });
+      (groups[YCN_LADDER[Math.min(i, YCN_LADDER.length - 1)]] ??= []).push(danceLabel(d));
+    }
+    const order = Object.keys(groups).sort((a, b) => YCN_LADDER.indexOf(b) - YCN_LADDER.indexOf(a));
+    return el('td', { class: 'allowed' }, order.map(l => el('div', {},
+      el('span', { class: 'lvl', style: `background:${levelColor(l)}` }, l), groups[l].join(', '))));
   };
   return el('section', {},
     el('h2', {}, 'YCN points'),
-    el('p', { class: 'sub' }, 'Approximate proficiency points earned at each level, broken down by dance: 3/2/1 for 1st–3rd, plus 1 for 4th–6th when the event had a quarterfinal.'),
+    el('p', { class: 'sub' }, `Points belong to each dancer, not the couple, and count per dance. A placement scores at its own level, double one level down, and 7 at every level below that. ${POINT_OUT} points in a dance (highlighted) points you out of that level and every level below it, for that dance; a couple dances at the level of whichever partner has more points. Approximate, from DSCO results only: competitions apply their own rules.`),
     el('div', { class: 'scroll' }, el('table', { class: 'points' },
-      el('thead', {}, el('tr', {}, el('th', {}, 'Style'), levels.map(l => el('th', {}, el('span', { class: 'lvl', style: `background:${levelColor(l)}` }, l))))),
-      el('tbody', {}, styles.map(st => el('tr', {}, el('th', { scope: 'row' }, st), levels.map(l => cell(st, l))))))));
+      el('thead', {}, el('tr', {}, el('th', {}, 'Style'), levels.map(l => el('th', {}, el('span', { class: 'lvl', style: `background:${levelColor(l)}` }, l))), el('th', {}, 'Lowest level allowed'))),
+      el('tbody', {}, styles.map(st => el('tr', {}, el('th', { scope: 'row' }, st), levels.map(l => cell(st, l)), allowed(st)))))));
 }
 
 const stat = (value, label) => el('div', { class: 'stat' }, el('b', {}, value), el('span', { class: 'sub' }, label));
@@ -463,12 +497,12 @@ function compTables(entries) {
     return el('div', { class: 'comp' },
       el('div', { class: 'comphead' },
         el('h3', {}, cleanComp(c.name)), el('span', { class: 'sub' }, fmtDate(es[0].date)),
-        el('a', { href: c.site, target: '_blank', rel: 'noopener' }, 'DSCO site')),
+        el('a', { href: c.site, target: '_blank', rel: 'noopener' }, c.source === 'o2cm' ? 'O2CM results' : 'DSCO site')),
       el('div', { class: 'scroll' }, el('table', {},
         el('thead', {}, el('tr', {}, ['Event', 'Partner', 'Place', 'Score', 'Judges’ marks by round'].map(h => el('th', {}, h)))),
         el('tbody', {}, es.sort((a, b) => a.ev.n.localeCompare(b.ev.n)).map(e => el('tr', {},
           el('td', {}, el('span', { class: 'lvl', style: `background:${levelColor(e.level)}` }, e.level),
-            el('a', { href: `${c.site}/results/${encodeURIComponent(e.ev.n)}`, target: '_blank', rel: 'noopener' }, e.ev.n.replace(e.level + ' ', ''))),
+            el('a', { href: e.ev.u || `${c.site}/results/${encodeURIComponent(e.ev.n)}`, target: '_blank', rel: 'noopener' }, e.ev.n.replace(e.level + ' ', ''))),
           el('td', {}, el('span', { class: 'bib' }, e.num), e.partner || '—'),
           el('td', { class: 'num' }, `${ordinal(e.place)} of ${e.N}`),
           el('td', { class: 'num' }, `${e.beat.toFixed(0)}%`),
