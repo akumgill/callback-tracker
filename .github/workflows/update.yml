@@ -34,6 +34,10 @@ jobs:
         if: github.event_name != 'push'
         run: python dsco_crawl.py
 
+      - name: Update ratings
+        if: github.event_name != 'push'
+        run: python ratings.py
+
       - name: Commit new results
         if: github.event_name != 'push'
         run: |

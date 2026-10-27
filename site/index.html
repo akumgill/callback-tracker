@@ -90,6 +90,11 @@ tr:last-child td { border-bottom: 0; }
 .points td.none { color: var(--muted); }
 .points .out { color: var(--accent); font-weight: 600; }
 .points .allowed { min-width: 15em; }
+.stat.rating { gap: 4px; }
+.stat.rating .ref { font-size: 12px; }
+.chip-sm { font-family: var(--font-body); font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; padding: 1px 7px; margin-left: 8px; vertical-align: middle; }
+td .better { color: #1a9850; font-weight: 600; }
+td .worse { color: #d73027; }
 .fine { font-size: 13px; }
 .fine a, footer a, .team-link { color: var(--accent); }
 .eyebrow .team-link { color: inherit; text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 3px; }
@@ -149,7 +154,7 @@ const REPO = 'https://github.com/akumgill/callback-tracker';
 const RDYLGN = ['#a50026', '#d73027', '#f46d43', '#fdae61', '#fee08b', '#ffffbf', '#d9ef8b', '#a6d96a', '#66bd63', '#1a9850', '#006837']
   .map((c, i, a) => [i / (a.length - 1), c]);
 
-const state = { comps: [], people: [], names: { alias: {}, split: {} }, schools: {}, teams: [], files: {},
+const state = { comps: [], people: [], names: { alias: {}, split: {} }, schools: {}, teams: [], files: {}, ratingFiles: {}, boards: null,
   view: 'person', person: null, aff: null, entries: [], team: null, teamEntries: [] };
 const $ = s => document.querySelector(s);
 const el = (tag, attrs = {}, ...kids) => {
@@ -199,6 +204,14 @@ async function getJSON(path) {
   return r.json();
 }
 
+// expected place, field strength and this dancer's rating after the event (lead first, then follow)
+function ratingOf(rev, idx, role, lead) {
+  const row = rev?.c?.[idx];
+  if (!row) return {};
+  const after = role === 'Lead' || !fold(lead) ? row[1] : row[row.length - 1];
+  return { expected: row[0], field: rev.f, ratingAfter: after };
+}
+
 const levelOf = ev => PROGRESSION.includes(ev.lv) || ev.lv === 'Syllabus' ? ev.lv : (ev.lv || 'Other');
 
 async function loadComp(i) {
@@ -207,14 +220,21 @@ async function loadComp(i) {
   return state.files[c.key];
 }
 
+// rating prototype output for a comp: {event: {f: field strength, c: {couple index: [expected place, rating after...]}}}
+async function loadRatings(i) {
+  const c = state.comps[i];
+  state.ratingFiles[c.key] ??= getJSON(`data/ratings/${c.key}.json`).catch(() => ({}));
+  return state.ratingFiles[c.key];
+}
+
 async function entriesFor(person) {
   const want = person[3];
-  const comps = await Promise.all(person[2].map(loadComp));
+  const [comps, rated] = await Promise.all([Promise.all(person[2].map(loadComp)), Promise.all(person[2].map(loadRatings))]);
   const out = [];
-  for (const comp of comps) {
+  for (const [ci, comp] of comps.entries()) {
     const date = new Date(comp.date + 'T00:00:00Z');
     for (const ev of comp.events) {
-      for (const [num, lead, follow, rawAff, place, recalls, final] of ev.c) {
+      for (const [idx, [num, lead, follow, rawAff, place, recalls, final]] of ev.c.entries()) {
         const aff = cleanSchool(rawAff);
         const role = personKey(lead, aff) === want ? 'Lead' : personKey(follow, aff) === want ? 'Follow' : null;
         if (!role) continue;
@@ -230,6 +250,7 @@ async function entriesFor(person) {
             return of ? got / of * 100 : null;
           }),
           hadQF: ev.r.length >= 3,
+          ...ratingOf(rated[ci][ev.n], idx, role, lead),
         });
       }
     }
@@ -374,7 +395,8 @@ function render() {
 
   const tables = el('section', {}, el('h2', {}, 'Results by competition'), ...compTables(entries));
 
-  app.replaceChildren(...[head, pointsTable(entries), trend, grids, tables].filter(Boolean));
+  app.replaceChildren(...[head, ratingSection(entries), pointsTable(entries), trend, grids, tables].filter(Boolean));
+  drawRatings(entries);
   drawTrend(entries);
   drawHeat(entries);
 }
@@ -421,6 +443,76 @@ function pointsTable(entries) {
     el('div', { class: 'scroll' }, el('table', { class: 'points' },
       el('thead', {}, el('tr', {}, el('th', {}, 'Style'), levels.map(l => el('th', {}, el('span', { class: 'lvl', style: `background:${levelColor(l)}` }, l))), el('th', {}, 'Lowest level allowed'))),
       el('tbody', {}, styles.map(st => el('tr', {}, el('th', { scope: 'row' }, st), levels.map(l => cell(st, l)), allowed(st)))))));
+}
+
+// ---------------------------------------------------------------- rating (prototype)
+
+const STYLE_COLORS = { Standard: '#2a78d6', Smooth: '#eb6834', Latin: '#1baf7a', Rhythm: '#c98500' };
+const fmtRating = r => Math.round(r).toLocaleString('en-US');
+// starting rating per level, as in ratings.py (START + LEVEL_STEP per level above Bronze)
+const LEVEL_BASES = [['Newcomer', 1100], ['Bronze', 1500], ['Silver', 1900], ['Gold', 2300], ['Novice', 2700]];
+
+function ratingSection(entries) {
+  if (!state.boards) return null;
+  const styles = STYLES.filter(st => entries.some(e => e.ev.st === st && e.ratingAfter != null));
+  if (!styles.length) return null;
+  const { provisional, activeDays } = state.boards;
+  const refs = rows => rows.length ? `#1 ${fmtRating(rows[0][1])} · #10 ${fmtRating(rows[Math.min(9, rows.length - 1)][1])} · median ${fmtRating(rows[Math.floor(rows.length / 2)][1])}` : '';
+  const cards = styles.map(st => {
+    const es = entries.filter(e => e.ev.st === st && e.ratingAfter != null);
+    const board = state.boards.styles[st] || [];
+    const established = board.filter(b => b[2] >= provisional);
+    const me = board.find(b => b[0] === state.person[3]);
+    const level = me?.[4];
+    const peers = established.filter(b => b[4] === level);
+    const rank = rows => rows.findIndex(b => b[0] === state.person[3]) + 1;
+    const isProvisional = es.length < provisional;
+    return el('div', { class: 'stat rating' },
+      el('span', { class: 'eyebrow' }, st),
+      el('b', {}, fmtRating(es.at(-1).ratingAfter), isProvisional ? el('span', { class: 'chip-sm' }, 'provisional') : null),
+      el('span', { class: 'sub' }, `${es.length} ${es.length === 1 ? 'event' : 'events'}, last ${fmtDate(es.at(-1).date)}`),
+      !me ? el('span', { class: 'sub' }, `Not active in the past year.`)
+        : isProvisional ? el('span', { class: 'sub' }, `Ranked after ${provisional} events.`)
+        : [level && rank(peers) ? el('span', {}, `#${rank(peers)} of ${peers.length} active ${level} dancers`) : null,
+           el('span', { class: 'sub ref' }, `${level || ''} ${st}: ${refs(peers)}`),
+           el('span', { class: 'sub ref' }, `All ${st}: #${rank(established)} of ${established.length} · ${refs(established)}`)]);
+  });
+  return el('section', {},
+    el('h2', {}, 'Rating ', el('span', { class: 'chip-sm' }, 'prototype')),
+    el('p', { class: 'sub' }, `An Elo-style rating per style, from every placement in date order: beating a strong field moves it more than beating a weak one. All levels share one scale, and each level is a stronger field, so dancers start at their first level’s base (dotted lines): Newcomer 1,100, Bronze 1,500, Silver 1,900, Gold 2,300. New dancers’ ratings move quickly and settle as they gain events. Ranks count dancers active in the past ${activeDays === 365 ? 'year' : activeDays + ' days'} with ${provisional}+ events. Tested on 2026 events, it predicted finishing order better than average placement score (rank correlation 0.62 vs 0.51) and picked 75% of finalists.`),
+    el('div', { class: 'stats' }, cards),
+    el('div', { class: 'panel', style: 'margin-top:12px' }, el('div', { id: 'rating-chart' })));
+}
+
+function drawRatings(entries) {
+  const div = $('#rating-chart');
+  if (!div) return;
+  // one point per competition: the rating after its last event there (events are rated in this order)
+  const traces = STYLES.map(st => {
+    const byComp = new Map();
+    for (const e of entries.filter(e => e.ev.st === st && e.ratingAfter != null)) {
+      if (!byComp.has(e.comp)) byComp.set(e.comp, []);
+      byComp.get(e.comp).push(e);
+    }
+    if (!byComp.size) return null;
+    const pts = [...byComp.values()];
+    return {
+      x: pts.map(es => es[0].date), y: pts.map(es => es.at(-1).ratingAfter), mode: 'lines+markers', name: st,
+      line: { color: STYLE_COLORS[st], width: 2 }, marker: { color: STYLE_COLORS[st], size: 8 },
+      text: pts.map(es => `<b>${esc(cleanComp(es[0].comp.name))}</b><br>` + es.map(e =>
+        `${esc(e.ev.n.replace(e.level + ' ' + e.ev.st + ' ', ''))}: ${ordinal(e.place)} of ${e.N}, expected ${ordinal(Math.round(e.expected))}`).join('<br>') +
+        `<br>rating after: ${fmtRating(es.at(-1).ratingAfter)}`),
+      hovertemplate: '%{text}<extra></extra>',
+    };
+  }).filter(Boolean);
+  Plotly.newPlot(div, traces, {
+    ...plotTheme(), height: 300, margin: { l: 52, r: 12, t: 10, b: 36 },
+    legend: { orientation: 'h', y: 1.12 },
+    xaxis: { gridcolor: css('--line'), tickformat: '%b %Y' },
+    yaxis: { gridcolor: css('--line'), zeroline: false, title: { text: 'rating' } },
+    shapes: LEVEL_BASES.map(([, y]) => ({ type: 'line', xref: 'paper', x0: 0, x1: 1, y0: y, y1: y, line: { color: css('--line'), width: 1, dash: 'dot' } })),
+    annotations: LEVEL_BASES.map(([name, y]) => ({ xref: 'paper', x: 1, xanchor: 'right', y, yanchor: 'bottom', text: name, showarrow: false, font: { size: 10, color: css('--muted') } })),
+  }, { displayModeBar: false, responsive: true });
 }
 
 // ---------------------------------------------------------------- teams
@@ -652,12 +744,14 @@ function compTables(entries) {
         el('h3', {}, cleanComp(c.name)), el('span', { class: 'sub' }, fmtDate(es[0].date)),
         el('a', { href: c.site, target: '_blank', rel: 'noopener' }, c.source === 'o2cm' ? 'O2CM results' : 'DSCO site')),
       el('div', { class: 'scroll' }, el('table', {},
-        el('thead', {}, el('tr', {}, ['Event', 'Partner', 'Place', 'Score', 'Judges’ marks by round'].map(h => el('th', {}, h)))),
+        el('thead', {}, el('tr', {}, ['Event', 'Partner', 'Place', 'Expected', 'Score', 'Judges’ marks by round'].map(h => el('th', {}, h)))),
         el('tbody', {}, es.sort((a, b) => a.ev.n.localeCompare(b.ev.n)).map(e => el('tr', {},
           el('td', {}, el('span', { class: 'lvl', style: `background:${levelColor(e.level)}` }, e.level),
             el('a', { href: e.ev.u || `${c.site}/results/${encodeURIComponent(e.ev.n)}`, target: '_blank', rel: 'noopener' }, e.ev.n.replace(e.level + ' ', ''))),
           el('td', {}, el('span', { class: 'bib' }, e.num), e.partner || '—'),
           el('td', { class: 'num' }, `${ordinal(e.place)} of ${e.N}`),
+          el('td', { class: 'num' }, e.expected ? el('span', { class: e.place < e.expected - 1 ? 'better' : e.place > e.expected + 1 ? 'worse' : '',
+            title: `Field strength ${e.field}` }, ordinal(Math.round(e.expected))) : '—'),
           el('td', { class: 'num' }, `${e.beat.toFixed(0)}%`),
           el('td', { class: 'rounds' }, roundsText(e)))))))
     );
@@ -694,6 +788,7 @@ async function boot() {
   try {
     [state.comps, state.people, state.names, state.schools] = await Promise.all([getJSON('data/comps.json'), getJSON('data/people.json'),
       getJSON('data/names.json').catch(() => state.names), getJSON('data/schools.json').catch(() => ({}))]);
+    state.boards = await getJSON('data/ratings/boards.json').catch(() => null);
   } catch (e) {
     $('#status').textContent = 'The results index didn’t load. Reload the page to try again.';
     return;
