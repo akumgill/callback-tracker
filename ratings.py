@@ -1,24 +1,29 @@
 #!/usr/bin/env python3
 """Dancer ratings from event placements (prototype).
 
-A multi-player Elo: each event is a ranking of couples, and every dancer has one
-rating per style. Levels share the scale, but a dancer starts higher the higher
-the level they first appear at, since each level up is a stronger field. A
-couple's rating is the average of its two dancers'. After an event,
-each dancer moves by K x (share of the field actually beaten - share expected
-from the ratings). Events are processed in date order, so a rating on any date
-only uses earlier results.
+Each event gives every couple a performance: the rating at which the Elo formula
+expects a couple to beat exactly the share of the field they beat, given the
+field's ratings going in. Beating a strong field is a higher performance than
+beating a weak one. A dancer's rating in a style is the average of their
+performances, each weighted by 2^(-age / HALF_LIFE), plus PRIOR_WEIGHT events'
+worth of a starting rating for their first level. So recent results count most,
+and partners who dance together get the same performances and converge on the
+same rating once older separate results fade. A couple's strength is the average
+of its two dancers.
 
-K starts high for a dancer's first events and shrinks as they gain experience,
-so newcomers find their level quickly and established ratings swing less. The
-K settings were chosen on 2025 events and checked on 2026 (--backtest), against
-each dancer's average placement score so far as a baseline.
+Levels share one scale but start apart: couples who dance two adjacent levels at
+one competition place about 20-35 placement-score points lower in the higher
+one, so the starting rating rises LEVEL_STEP per level (Bronze = START).
+
+Events are processed in date order, so a rating on any date only uses earlier
+results. HALF_LIFE, PRIOR_WEIGHT and LEVEL_STEP were chosen on 2025 events and
+checked on 2026 (--backtest), against each dancer's average placement score so
+far as a baseline.
 
 Outputs, read by site/index.html:
-    site/data/ratings/<comp>.json   per event: field strength; per couple: expected
-                                    place and each dancer's rating after the event
-    site/data/ratings/boards.json   per style: couples active in the past year, rated as the
-                                    average of the two dancers' ratings
+    site/data/ratings/<comp>.json   per event: field strength; per couple: expected place,
+                                    performance, and each dancer's rating after the event
+    site/data/ratings/boards.json   per style: dancers active in the past year
 
 Usage:
     python ratings.py --backtest       # prediction accuracy vs the baseline
@@ -32,23 +37,25 @@ import math
 import os
 from collections import defaultdict
 
+import numpy as np
+
 from dsco_crawl import OUT, clean_school, fold, name_rules, person_key
 
 STYLES = ('Standard', 'Smooth', 'Latin', 'Rhythm')
 PROGRESSION_LEVELS = ('Newcomer', 'Bronze', 'Silver', 'Gold', 'Novice', 'Prechamp', 'Championship')
 START, SCALE = 1500.0, 400.0
-# K shrinks with experience: new dancers move fast, established ones settle.
-# K(n) = K_LATE + (K_EARLY - K_LATE) / (1 + n / K_HALF), n = earlier events in the style
-K_EARLY, K_LATE, K_HALF = 768.0, 256.0, 3.0
-# Levels are different fields: couples who dance two adjacent levels at one competition place
-# about 20-35 placement-score points lower in the higher one. So a dancer's first rating in a
-# style starts LEVEL_STEP higher for each level up (Bronze = START). 400 predicted 2025 best.
+HALF_LIFE = 90.0      # days for a performance to count half as much
+PRIOR_WEIGHT = 0.1    # events' worth of the starting rating
 LEVEL_INDEX = {'Newcomer': 0, 'Bronze': 1, 'Silver': 2, 'Gold': 3, 'Novice': 4, 'Prechamp': 5,
                'Championship': 6, 'Syllabus': 2}
 LEVEL_STEP = 400.0
 MIN_COUPLES = 4
-PROVISIONAL = 3   # events in a style before a rating counts as established
+PROVISIONAL = 3       # events in a style before a rating counts as established
 ACTIVE_DAYS = 365
+
+
+def level_start(level):
+    return START + LEVEL_STEP * (LEVEL_INDEX.get(level, 1) - 1)
 
 
 def load_events():
@@ -102,28 +109,48 @@ def beats(a, b):
     return 1 / (1 + 10 ** ((b - a) / SCALE))
 
 
-def level_start(level):
-    return START + LEVEL_STEP * (LEVEL_INDEX.get(level, 1) - 1)
+def performance(team, share):
+    """Per couple, the rating whose mean chance of beating each other couple equals its share
+    of the field beaten (bisection, all couples at once)."""
+    n = len(team)
+    lo, hi = np.full(n, team.min() - 2000.0), np.full(n, team.max() + 2000.0)
+    others = ~np.eye(n, dtype=bool)
+    for _ in range(32):
+        mid = (lo + hi) / 2
+        p = 1 / (1 + 10 ** ((team[None, :] - mid[:, None]) / SCALE))
+        got = (p * others).sum(axis=1) / (n - 1)
+        lo, hi = np.where(got < share, mid, lo), np.where(got < share, hi, mid)
+    return (lo + hi) / 2
 
 
-def k_of(n):
-    return K_LATE + (K_EARLY - K_LATE) / (1 + n / K_HALF)
+class Ratings:
+    def __init__(self):
+        self.history = defaultdict(list)   # (style, person) -> [(day, performance)]
+        self.start = {}
+
+    def rating(self, key, day):
+        weight, total = PRIOR_WEIGHT, PRIOR_WEIGHT * self.start[key]
+        for d, perf in self.history[key]:
+            w = 0.5 ** ((day - d) / HALF_LIFE)
+            weight += w
+            total += w * perf
+        return total / weight
 
 
-def run(events, since='2026-01-01', k=k_of):
-    rating = {}
-    count = defaultdict(int)
-    prior = defaultdict(list)            # placement scores so far, for the baseline
+def run(events, since='2026-01-01'):
+    r = Ratings()
+    prior = defaultdict(list)          # placement scores so far, for the baseline
     scores = defaultdict(list)
-    per_comp = defaultdict(dict)         # comp -> event name -> {'f': field, 'c': {index: [exp, r_lead, r_follow]}}
-    last = {}                            # (style, person) -> (date, level, rating, events)
-    pairs = {}                           # (style, sorted members) -> (events together, last date, level)
+    per_comp = defaultdict(dict)       # comp -> event -> {'f': field, 'c': {index: [exp, perf, ratings after...]}}
+    last = {}                          # (style, person) -> (date, level, events)
+    swing = {}                         # (style, person, comp) -> [rating before, rating after], 5+ events before
     for date, comp, ev, couples in events:
+        day = dt.date.fromisoformat(date).toordinal()
         style, n = ev['st'], len(couples)
         for _, _, ms in couples:
             for m in ms:
-                rating.setdefault((style, m), level_start(ev['lv']))
-        team = [sum(rating[(style, m)] for m in ms) / len(ms) for _, _, ms in couples]
+                r.start.setdefault((style, m), level_start(ev['lv']))
+        team = np.array([sum(r.rating((style, m), day) for m in ms) / len(ms) for _, _, ms in couples])
         places = [p for _, p, _ in couples]
         expected = [1 + sum(beats(team[j], team[i]) for j in range(n) if j != i) for i in range(n)]
         if date >= since and n >= 6:
@@ -135,43 +162,38 @@ def run(events, since='2026-01-01', k=k_of):
             for key, pred in (('finals_rating', expected), ('finals_baseline', base)):
                 top = set(sorted(range(n), key=lambda i: pred[i])[:6])
                 scores[key].append(len(finalists & top) / max(1, min(6, len(finalists))))
-        field = sum(team) / n
-        out = per_comp[comp].setdefault(ev['n'], {'f': round(field), 'c': {}})
-        for _, _, ms in couples:
-            pk = (style, tuple(sorted(ms)))
-            n_before, _, level_before = pairs.get(pk, (0, '', None))
-            pairs[pk] = (n_before + 1, date, ev['lv'] if ev['lv'] in PROGRESSION_LEVELS else level_before)
+        beaten = np.array([(sum(q > p for q in places) + 0.5 * (sum(q == p for q in places) - 1)) / (n - 1)
+                           for p in places])
+        perf = performance(team, (beaten * (n - 1) + 0.5) / n)  # +0.5 keeps winners and last places finite
+        out = per_comp[comp].setdefault(ev['n'], {'f': round(float(team.mean())), 'c': {}})
         for i, (idx, place, ms) in enumerate(couples):
-            beaten = (sum(q > place for q in places) + 0.5 * (sum(q == place for q in places) - 1)) / (n - 1)
-            share_expected = (n - expected[i]) / (n - 1)
             after = []
             for m in ms:
                 key = (style, m)
-                change = k(count[key]) * (beaten - share_expected)
-                if count[key] >= 5:  # swing per competition for established dancers
-                    scores['_swing'].append((key, comp, change))
-                rating[key] += change
-                count[key] += 1
-                prior[key].append(beaten * 100)
-                after.append(round(rating[key]))
-                level = ev['lv'] if ev['lv'] in PROGRESSION_LEVELS else (last.get(key, (None, ''))[1])
-                last[key] = (date, level, rating[key], count[key])
-            out['c'][idx] = [round(expected[i], 1), *after]
-    return scores, per_comp, last, pairs
+                count = last.get(key, (None, None, 0))[2]
+                if count >= 5:
+                    swing.setdefault((key, comp), [r.rating(key, day), None])
+                r.history[key].append((day, float(perf[i])))
+                prior[key].append(beaten[i] * 100)
+                now = r.rating(key, day)
+                if (key, comp) in swing:
+                    swing[(key, comp)][1] = now
+                after.append(round(now))
+                level = ev['lv'] if ev['lv'] in PROGRESSION_LEVELS else last.get(key, (None, None, 0))[1]
+                last[key] = (date, level, count + 1)
+            out['c'][idx] = [round(expected[i], 1), round(float(perf[i])), *after]
+    scores['swing'] = [abs(b - a) for a, b in swing.values()]
+    return scores, per_comp, last, r
 
 
-def boards(last, pairs, today):
-    """Per style, couples active in the past year, best first:
-    ['member|member', couple rating, events together, last date, level]. A couple is ranked
-    rather than each dancer: the model splits a couple's results between its two dancers
-    somewhat arbitrarily (a partner who started low drags the couple's expectation down and
-    both partners rise together), but the couple's average is well determined."""
+def boards(last, r, today):
+    """Per style, dancers active in the past year: [key, rating, events, last date, level], best first."""
     cutoff = (today - dt.timedelta(days=ACTIVE_DAYS)).isoformat()
+    day = today.toordinal()
     out = {s: [] for s in STYLES}
-    for (style, members), (n, date, level) in pairs.items():
+    for (style, person), (date, level, n) in last.items():
         if date >= cutoff:
-            r = sum(last[(style, m)][2] for m in members) / len(members)
-            out[style].append(['|'.join(members), round(r), n, date, level])
+            out[style].append([person, round(r.rating((style, person), day)), n, date, level])
     for s in out:
         out[s].sort(key=lambda row: -row[1])
     return out
@@ -182,16 +204,13 @@ def main():
     ap.add_argument('--backtest', action='store_true')
     args = ap.parse_args()
     events = load_events()
-    scores, per_comp, last, pairs = run(events)
+    scores, per_comp, last, r = run(events)
     if args.backtest:
         mean = lambda v: sum(v) / len(v)
+        sw = sorted(scores['swing'])
         print(f'{len(events)} events; scored {len(scores["rating"])} from 2026 with 6+ couples')
         print(f'Order (Spearman): rating {mean(scores["rating"]):.3f} vs baseline {mean(scores["baseline"]):.3f}')
         print(f'Finalists picked: rating {mean(scores["finals_rating"]):.1%} vs baseline {mean(scores["finals_baseline"]):.1%}')
-        per_comp_swing = defaultdict(float)
-        for key, comp, change in scores['_swing']:
-            per_comp_swing[(key, comp)] += change
-        sw = sorted(abs(v) for v in per_comp_swing.values())
         print(f'Rating change per competition, dancers with 5+ events: median {sw[len(sw) // 2]:.0f}, '
               f'90th percentile {sw[int(len(sw) * 0.9)]:.0f}')
         return
@@ -202,9 +221,9 @@ def main():
             json.dump(evs, f, separators=(',', ':'))
     latest = max(e[0] for e in events)
     with open(os.path.join(folder, 'boards.json'), 'w') as f:
-        json.dump({'asOf': latest, 'provisional': PROVISIONAL, 'activeDays': ACTIVE_DAYS,
-                   'styles': boards(last, pairs, dt.date.fromisoformat(latest))}, f, separators=(',', ':'))
-    print(f'ratings: {len(per_comp)} competitions, {len(last)} dancer ratings, {len(pairs)} couples, as of {latest}')
+        json.dump({'asOf': latest, 'provisional': PROVISIONAL, 'activeDays': ACTIVE_DAYS, 'halfLife': HALF_LIFE,
+                   'styles': boards(last, r, dt.date.fromisoformat(latest))}, f, separators=(',', ':'))
+    print(f'ratings: {len(per_comp)} competitions, {len(last)} dancer ratings, as of {latest}')
 
 
 if __name__ == '__main__':

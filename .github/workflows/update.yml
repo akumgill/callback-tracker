@@ -36,7 +36,9 @@ jobs:
 
       - name: Update ratings
         if: github.event_name != 'push'
-        run: python ratings.py
+        run: |
+          pip install --quiet numpy
+          python ratings.py
 
       - name: Commit new results
         if: github.event_name != 'push'
