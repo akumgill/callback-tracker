@@ -81,7 +81,13 @@ tr:last-child td { border-bottom: 0; }
 .lvl { display: inline-block; font-size: 12px; font-weight: 600; padding: 1px 7px; border-radius: 4px; color: #fff; margin-right: 6px; }
 .rounds { font-family: var(--font-data); font-size: 13px; color: var(--muted); }
 .rounds b { color: var(--fg); font-weight: 500; }
+.rounds .dance-line { white-space: nowrap; }
+.rounds .dance { display: inline-block; min-width: 6.5em; font-family: var(--font-body); color: var(--fg); }
 .empty, .status { color: var(--muted); padding: 24px 0; }
+.points th[scope=row] { font-size: 14px; text-transform: none; letter-spacing: 0; color: var(--fg); }
+.points td b { font-family: var(--font-display); font-size: 22px; font-variant-numeric: tabular-nums; }
+.points .per { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.points td.none { color: var(--muted); }
 footer .wrap { padding-block: 0 40px; color: var(--muted); font-size: 13px; display: grid; gap: 4px; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
@@ -275,7 +281,6 @@ function render() {
   const comps = new Set(entries.map(e => e.comp.key));
   const finals = entries.filter(e => e.final).length;
   const best = Math.min(...entries.map(e => e.place));
-  const points = entries.reduce((s, e) => s + (PROGRESSION.includes(e.level) ? ycnPoints(e) * e.ev.d.length : 0), 0);
   // highest syllabus level danced at the most recent competition
   const prog = entries.filter(e => PROGRESSION.includes(e.level));
   const lastComp = (prog.at(-1) || entries.at(-1)).comp;
@@ -293,7 +298,6 @@ function render() {
       stat(entries.length, 'events'),
       stat(finals, finals === 1 ? 'final' : 'finals'),
       stat(ordinal(best), 'best placement'),
-      stat(points, 'YCN points (approx.)'),
       stat(latest.level, `level at ${shortComp(latest.comp.name)}`)),
     partners.length ? el('p', { class: 'sub' }, `Danced with ${partners.join(', ')}.`) : null,
   );
@@ -312,9 +316,33 @@ function render() {
 
   const tables = el('section', {}, el('h2', {}, 'Results by competition'), ...compTables(entries));
 
-  app.replaceChildren(head, trend, grids, tables);
+  app.replaceChildren(...[head, pointsTable(entries), trend, grids, tables].filter(Boolean));
   drawTrend(entries);
   drawHeat(entries);
+}
+
+// YCN points per style (rows) and syllabus level (columns); points count once per dance in the event
+function pointsTable(entries) {
+  const prog = entries.filter(e => PROGRESSION.includes(e.level));
+  const levels = PROGRESSION.filter(l => prog.some(e => e.level === l));
+  const styles = STYLES.filter(s => prog.some(e => e.ev.st === s));
+  if (!levels.length) return null;
+  const cell = (style, level) => {
+    const es = prog.filter(e => e.ev.st === style && e.level === level);
+    if (!es.length) return el('td', { class: 'none' }, '—');
+    const per = {};
+    for (const e of es) for (const d of e.ev.d) per[d] = (per[d] || 0) + ycnPoints(e);
+    const total = Object.values(per).reduce((a, b) => a + b, 0);
+    const order = [...DANCES[style], ...Object.keys(per)];
+    const parts = [...new Set(order)].filter(d => per[d]).map(d => `${danceLabel(d)} ${per[d]}`);
+    return el('td', {}, el('b', {}, total), parts.length ? el('div', { class: 'per' }, parts.join(' · ')) : null);
+  };
+  return el('section', {},
+    el('h2', {}, 'YCN points'),
+    el('p', { class: 'sub' }, 'Approximate proficiency points earned at each level, broken down by dance: 3/2/1 for 1st–3rd, plus 1 for 4th–6th when the event had a quarterfinal.'),
+    el('div', { class: 'scroll' }, el('table', { class: 'points' },
+      el('thead', {}, el('tr', {}, el('th', {}, 'Style'), levels.map(l => el('th', {}, el('span', { class: 'lvl', style: `background:${levelColor(l)}` }, l))))),
+      el('tbody', {}, styles.map(st => el('tr', {}, el('th', { scope: 'row' }, st), levels.map(l => cell(st, l))))))));
 }
 
 const stat = (value, label) => el('div', { class: 'stat' }, el('b', {}, value), el('span', { class: 'sub' }, label));
@@ -437,7 +465,7 @@ function compTables(entries) {
         el('h3', {}, cleanComp(c.name)), el('span', { class: 'sub' }, fmtDate(es[0].date)),
         el('a', { href: c.site, target: '_blank', rel: 'noopener' }, 'DSCO site')),
       el('div', { class: 'scroll' }, el('table', {},
-        el('thead', {}, el('tr', {}, ['Event', 'Partner', 'Place', 'Score', 'Rounds (marks per dance)'].map(h => el('th', {}, h)))),
+        el('thead', {}, el('tr', {}, ['Event', 'Partner', 'Place', 'Score', 'Judges’ marks by round'].map(h => el('th', {}, h)))),
         el('tbody', {}, es.sort((a, b) => a.ev.n.localeCompare(b.ev.n)).map(e => el('tr', {},
           el('td', {}, el('span', { class: 'lvl', style: `background:${levelColor(e.level)}` }, e.level),
             el('a', { href: `${c.site}/results/${encodeURIComponent(e.ev.n)}`, target: '_blank', rel: 'noopener' }, e.ev.n.replace(e.level + ' ', ''))),
@@ -449,10 +477,16 @@ function compTables(entries) {
   });
 }
 
+// one line per dance, so multi-dance events show every dance's marks
 function roundsText(e) {
-  const parts = e.rounds.map(r => el('span', {}, el('b', {}, roundAbbr(r.name)), ' ', r.recalls.join('·'), r.judges !== 5 ? `/${r.judges}` : '', '  '));
-  if (e.final) parts.push(el('span', {}, el('b', {}, 'Final'), ' ', e.final.map(p => ordinal(Math.round(p))).join('·')));
-  return parts.length ? parts : '—';
+  if (!e.rounds.length && !e.final) return '—';
+  return e.ev.d.map((d, di) => {
+    const parts = e.rounds.map(r => [el('b', {}, roundAbbr(r.name)), ` ${r.recalls[di]}${r.judges !== 5 ? '/' + r.judges : ''}`]);
+    if (e.final) parts.push([el('b', {}, 'Final'), ` ${ordinal(Math.round(e.final[di]))}`]);
+    return el('div', { class: 'dance-line' },
+      e.ev.d.length > 1 ? el('span', { class: 'dance' }, danceLabel(d)) : null,
+      parts.flatMap((p, i) => i ? [' · ', ...p] : p));
+  });
 }
 
 // ---------------------------------------------------------------- boot
