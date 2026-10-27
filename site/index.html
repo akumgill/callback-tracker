@@ -209,7 +209,8 @@ function ratingOf(rev, idx, role, lead) {
   const row = rev?.c?.[idx];
   if (!row) return {};
   const after = role === 'Lead' || !fold(lead) ? row[1] : row[row.length - 1];
-  return { expected: row[0], field: rev.f, ratingAfter: after };
+  const both = row.slice(1);
+  return { expected: row[0], field: rev.f, ratingAfter: after, coupleAfter: both.reduce((a, b) => a + b, 0) / both.length };
 }
 
 const levelOf = ev => PROGRESSION.includes(ev.lv) || ev.lv === 'Syllabus' ? ev.lv : (ev.lv || 'Other');
@@ -454,32 +455,36 @@ const LEVEL_BASES = [['Newcomer', 1100], ['Bronze', 1500], ['Silver', 1900], ['G
 
 function ratingSection(entries) {
   if (!state.boards) return null;
-  const styles = STYLES.filter(st => entries.some(e => e.ev.st === st && e.ratingAfter != null));
+  const styles = STYLES.filter(st => entries.some(e => e.ev.st === st && e.coupleAfter != null));
   if (!styles.length) return null;
   const { provisional, activeDays } = state.boards;
   const refs = rows => rows.length ? `#1 ${fmtRating(rows[0][1])} · #10 ${fmtRating(rows[Math.min(9, rows.length - 1)][1])} · median ${fmtRating(rows[Math.floor(rows.length / 2)][1])}` : '';
   const cards = styles.map(st => {
-    const es = entries.filter(e => e.ev.st === st && e.ratingAfter != null);
+    const es = entries.filter(e => e.ev.st === st && e.coupleAfter != null);
+    const latest = es.at(-1);
+    const partnerKey = latest.partner ? personKey(latest.partner, latest.aff) : null;
+    const pair = [state.person[3], partnerKey].filter(Boolean).sort().join('|');
+    const together = es.filter(e => (e.partner ? personKey(e.partner, e.aff) : null) === partnerKey);
     const board = state.boards.styles[st] || [];
     const established = board.filter(b => b[2] >= provisional);
-    const me = board.find(b => b[0] === state.person[3]);
+    const me = board.find(b => b[0] === pair);
     const level = me?.[4];
     const peers = established.filter(b => b[4] === level);
-    const rank = rows => rows.findIndex(b => b[0] === state.person[3]) + 1;
-    const isProvisional = es.length < provisional;
+    const rank = rows => rows.findIndex(b => b[0] === pair) + 1;
+    const isProvisional = !me || me[2] < provisional;
     return el('div', { class: 'stat rating' },
       el('span', { class: 'eyebrow' }, st),
-      el('b', {}, fmtRating(es.at(-1).ratingAfter), isProvisional ? el('span', { class: 'chip-sm' }, 'provisional') : null),
-      el('span', { class: 'sub' }, `${es.length} ${es.length === 1 ? 'event' : 'events'}, last ${fmtDate(es.at(-1).date)}`),
-      !me ? el('span', { class: 'sub' }, `Not active in the past year.`)
-        : isProvisional ? el('span', { class: 'sub' }, `Ranked after ${provisional} events.`)
-        : [level && rank(peers) ? el('span', {}, `#${rank(peers)} of ${peers.length} active ${level} dancers`) : null,
+      el('b', {}, fmtRating(me ? me[1] : latest.coupleAfter), isProvisional ? el('span', { class: 'chip-sm' }, 'provisional') : null),
+      el('span', { class: 'sub' }, `with ${latest.partner || 'no partner listed'} · ${together.length} ${together.length === 1 ? 'event' : 'events'} together, last ${fmtDate(latest.date)}`),
+      !me ? el('span', { class: 'sub' }, 'Not active in the past year.')
+        : isProvisional ? el('span', { class: 'sub' }, `Couples are ranked after ${provisional} events together.`)
+        : [level && rank(peers) ? el('span', {}, `#${rank(peers)} of ${peers.length} active ${level} couples`) : null,
            el('span', { class: 'sub ref' }, `${level || ''} ${st}: ${refs(peers)}`),
            el('span', { class: 'sub ref' }, `All ${st}: #${rank(established)} of ${established.length} · ${refs(established)}`)]);
   });
   return el('section', {},
-    el('h2', {}, 'Rating ', el('span', { class: 'chip-sm' }, 'prototype')),
-    el('p', { class: 'sub' }, `An Elo-style rating per style, from every placement in date order: beating a strong field moves it more than beating a weak one. All levels share one scale, and each level is a stronger field, so dancers start at their first level’s base (dotted lines): Newcomer 1,100, Bronze 1,500, Silver 1,900, Gold 2,300. New dancers’ ratings move quickly and settle as they gain events. Ranks count dancers active in the past ${activeDays === 365 ? 'year' : activeDays + ' days'} with ${provisional}+ events. Tested on 2026 events, it predicted finishing order better than average placement score (rank correlation 0.62 vs 0.51) and picked 75% of finalists.`),
+    el('h2', {}, 'Couple rating ', el('span', { class: 'chip-sm' }, 'prototype')),
+    el('p', { class: 'sub' }, `An Elo-style rating per style, from every placement in date order: beating a strong field moves it more than beating a weak one. Each dancer is rated, and a couple is the average of its two dancers; couples are what get ranked, because the split of a couple's results between partners isn’t reliable. All levels share one scale, and each level is a stronger field, so dancers start at their first level’s base (dotted lines): Newcomer 1,100, Bronze 1,500, Silver 1,900, Gold 2,300. New dancers’ ratings move quickly and settle as they gain events, so a strong dancer newly paired at a lower level can stay overrated for a few events. Ranks count couples active in the past ${activeDays === 365 ? 'year' : activeDays + ' days'} with ${provisional}+ events together, at the level of their latest event. Tested on 2026 events, it predicted finishing order better than average placement score (rank correlation 0.62 vs 0.51) and picked 75% of finalists.`),
     el('div', { class: 'stats' }, cards),
     el('div', { class: 'panel', style: 'margin-top:12px' }, el('div', { id: 'rating-chart' })));
 }
@@ -490,18 +495,18 @@ function drawRatings(entries) {
   // one point per competition: the rating after its last event there (events are rated in this order)
   const traces = STYLES.map(st => {
     const byComp = new Map();
-    for (const e of entries.filter(e => e.ev.st === st && e.ratingAfter != null)) {
+    for (const e of entries.filter(e => e.ev.st === st && e.coupleAfter != null)) {
       if (!byComp.has(e.comp)) byComp.set(e.comp, []);
       byComp.get(e.comp).push(e);
     }
     if (!byComp.size) return null;
     const pts = [...byComp.values()];
     return {
-      x: pts.map(es => es[0].date), y: pts.map(es => es.at(-1).ratingAfter), mode: 'lines+markers', name: st,
+      x: pts.map(es => es[0].date), y: pts.map(es => es.at(-1).coupleAfter), mode: 'lines+markers', name: st,
       line: { color: STYLE_COLORS[st], width: 2 }, marker: { color: STYLE_COLORS[st], size: 8 },
       text: pts.map(es => `<b>${esc(cleanComp(es[0].comp.name))}</b><br>` + es.map(e =>
         `${esc(e.ev.n.replace(e.level + ' ' + e.ev.st + ' ', ''))}: ${ordinal(e.place)} of ${e.N}, expected ${ordinal(Math.round(e.expected))}`).join('<br>') +
-        `<br>rating after: ${fmtRating(es.at(-1).ratingAfter)}`),
+        `<br>with ${esc(es.at(-1).partner || '—')} · couple rating after: ${fmtRating(es.at(-1).coupleAfter)}`),
       hovertemplate: '%{text}<extra></extra>',
     };
   }).filter(Boolean);
@@ -509,7 +514,7 @@ function drawRatings(entries) {
     ...plotTheme(), height: 300, margin: { l: 52, r: 12, t: 10, b: 36 },
     legend: { orientation: 'h', y: 1.12 },
     xaxis: { gridcolor: css('--line'), tickformat: '%b %Y' },
-    yaxis: { gridcolor: css('--line'), zeroline: false, title: { text: 'rating' } },
+    yaxis: { gridcolor: css('--line'), zeroline: false, title: { text: 'couple rating' } },
     shapes: LEVEL_BASES.map(([, y]) => ({ type: 'line', xref: 'paper', x0: 0, x1: 1, y0: y, y1: y, line: { color: css('--line'), width: 1, dash: 'dot' } })),
     annotations: LEVEL_BASES.map(([name, y]) => ({ xref: 'paper', x: 1, xanchor: 'right', y, yanchor: 'bottom', text: name, showarrow: false, font: { size: 10, color: css('--muted') } })),
   }, { displayModeBar: false, responsive: true });

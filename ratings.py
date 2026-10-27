@@ -17,7 +17,8 @@ each dancer's average placement score so far as a baseline.
 Outputs, read by site/index.html:
     site/data/ratings/<comp>.json   per event: field strength; per couple: expected
                                     place and each dancer's rating after the event
-    site/data/ratings/boards.json   per style: dancers active in the past year
+    site/data/ratings/boards.json   per style: couples active in the past year, rated as the
+                                    average of the two dancers' ratings
 
 Usage:
     python ratings.py --backtest       # prediction accuracy vs the baseline
@@ -116,6 +117,7 @@ def run(events, since='2026-01-01', k=k_of):
     scores = defaultdict(list)
     per_comp = defaultdict(dict)         # comp -> event name -> {'f': field, 'c': {index: [exp, r_lead, r_follow]}}
     last = {}                            # (style, person) -> (date, level, rating, events)
+    pairs = {}                           # (style, sorted members) -> (events together, last date, level)
     for date, comp, ev, couples in events:
         style, n = ev['st'], len(couples)
         for _, _, ms in couples:
@@ -135,6 +137,10 @@ def run(events, since='2026-01-01', k=k_of):
                 scores[key].append(len(finalists & top) / max(1, min(6, len(finalists))))
         field = sum(team) / n
         out = per_comp[comp].setdefault(ev['n'], {'f': round(field), 'c': {}})
+        for _, _, ms in couples:
+            pk = (style, tuple(sorted(ms)))
+            n_before, _, level_before = pairs.get(pk, (0, '', None))
+            pairs[pk] = (n_before + 1, date, ev['lv'] if ev['lv'] in PROGRESSION_LEVELS else level_before)
         for i, (idx, place, ms) in enumerate(couples):
             beaten = (sum(q > place for q in places) + 0.5 * (sum(q == place for q in places) - 1)) / (n - 1)
             share_expected = (n - expected[i]) / (n - 1)
@@ -151,16 +157,21 @@ def run(events, since='2026-01-01', k=k_of):
                 level = ev['lv'] if ev['lv'] in PROGRESSION_LEVELS else (last.get(key, (None, ''))[1])
                 last[key] = (date, level, rating[key], count[key])
             out['c'][idx] = [round(expected[i], 1), *after]
-    return scores, per_comp, last
+    return scores, per_comp, last, pairs
 
 
-def boards(last, today):
-    """Per style, dancers active in the past year: [key, rating, events, last date, level], best first."""
+def boards(last, pairs, today):
+    """Per style, couples active in the past year, best first:
+    ['member|member', couple rating, events together, last date, level]. A couple is ranked
+    rather than each dancer: the model splits a couple's results between its two dancers
+    somewhat arbitrarily (a partner who started low drags the couple's expectation down and
+    both partners rise together), but the couple's average is well determined."""
     cutoff = (today - dt.timedelta(days=ACTIVE_DAYS)).isoformat()
     out = {s: [] for s in STYLES}
-    for (style, person), (date, level, r, n) in last.items():
+    for (style, members), (n, date, level) in pairs.items():
         if date >= cutoff:
-            out[style].append([person, round(r), n, date, level])
+            r = sum(last[(style, m)][2] for m in members) / len(members)
+            out[style].append(['|'.join(members), round(r), n, date, level])
     for s in out:
         out[s].sort(key=lambda row: -row[1])
     return out
@@ -171,7 +182,7 @@ def main():
     ap.add_argument('--backtest', action='store_true')
     args = ap.parse_args()
     events = load_events()
-    scores, per_comp, last = run(events)
+    scores, per_comp, last, pairs = run(events)
     if args.backtest:
         mean = lambda v: sum(v) / len(v)
         print(f'{len(events)} events; scored {len(scores["rating"])} from 2026 with 6+ couples')
@@ -192,8 +203,8 @@ def main():
     latest = max(e[0] for e in events)
     with open(os.path.join(folder, 'boards.json'), 'w') as f:
         json.dump({'asOf': latest, 'provisional': PROVISIONAL, 'activeDays': ACTIVE_DAYS,
-                   'styles': boards(last, dt.date.fromisoformat(latest))}, f, separators=(',', ':'))
-    print(f'ratings: {len(per_comp)} competitions, {len(last)} dancer-style ratings, as of {latest}')
+                   'styles': boards(last, pairs, dt.date.fromisoformat(latest))}, f, separators=(',', ':'))
+    print(f'ratings: {len(per_comp)} competitions, {len(last)} dancer ratings, {len(pairs)} couples, as of {latest}')
 
 
 if __name__ == '__main__':

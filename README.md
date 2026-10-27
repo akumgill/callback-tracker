@@ -11,7 +11,7 @@ For each dancer it shows:
 - a table per competition with partner, place, marks per round and per dance, and a link to the DSCO results page
 - YCN proficiency points by style and level, and the lowest level the dancer can still enter in each dance
 
-- a rating per style (prototype), with rank among active dancers at the same level and the expected place in each event
+- a couple rating per style (prototype), with rank among active couples at the same level and the expected place in each event
 
 Each school also has a team page: results by competition, the team's placement trend by level, and its roster.
 
@@ -21,7 +21,7 @@ Each school also has a team page: results by competition, the team's placement t
 
 - **Levels share one scale but start apart.** Couples who dance two adjacent levels at one competition place about 20–35 placement-score points lower in the higher one, so a dancer's first rating depends on their level: Newcomer 1,100, Bronze 1,500, Silver 1,900, Gold 2,300 (400 per level, chosen by backtest).
 - **New dancers move faster.** K starts at 768 and settles toward 256 as a dancer gains events in the style.
-- **Ranks** count dancers active in the past year with at least 3 events in the style.
+- **Couples are what get ranked.** Each dancer has a rating and a couple is the average of its two dancers, but how a couple's results split between the partners isn't reliable (a partner who started low drags the couple's expectation down, and both partners then rise together). So the page shows and ranks couple ratings: couples active in the past year with at least 3 events together, at the level of their latest event.
 
 Settings were chosen on 2025 events and tested on 2026 (`python ratings.py --backtest`): the rating predicts finishing order with a rank correlation of 0.615, against 0.513 for each dancer's average placement score so far, and picks 74.6% of finalists (67.5% for the baseline). A typical established dancer's rating moves about 90 points per competition. It only sees DSCO competitions, and it measures how judges ranked couples against each other, not absolute skill.
 
