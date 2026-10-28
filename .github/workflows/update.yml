@@ -2,7 +2,7 @@ name: Update results and deploy
 
 on:
   schedule:
-    - cron: '17 10 * * *'  # daily, about 6am US Eastern
+    - cron: '17 10 * * 1'  # Mondays, about 6am US Eastern, after weekend competitions
   workflow_dispatch:
   push:
     branches: [main]
@@ -29,7 +29,8 @@ jobs:
         with:
           python-version: '3.12'
 
-      # pushes only redeploy; the schedule and manual runs also re-crawl
+      # pushes only redeploy; the weekly schedule and manual runs ("Run workflow" on the
+      # Actions tab, or `gh workflow run update.yml`) also re-crawl
       - name: Crawl DSCO
         if: github.event_name != 'push'
         run: python dsco_crawl.py
@@ -39,6 +40,11 @@ jobs:
         run: |
           pip install --quiet numpy
           python ratings.py
+
+      # stops the run (and GitHub emails you) if the new data looks broken
+      - name: Check data
+        if: github.event_name != 'push'
+        run: python check_data.py
 
       - name: Commit new results
         if: github.event_name != 'push'
