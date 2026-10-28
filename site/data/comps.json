@@ -269,7 +269,7 @@
   "date": "2026-10-10",
   "site": "https://dsco-cmu26.web.app",
   "events": 85,
-  "fetched": "2026-10-27"
+  "fetched": "2026-10-28"
  },
  {
   "key": "upennprelude26",
@@ -277,7 +277,7 @@
   "date": "2026-10-10",
   "site": "https://dsco-upennprelude26.web.app",
   "events": 53,
-  "fetched": "2026-10-27"
+  "fetched": "2026-10-28"
  },
  {
   "key": "harvard26",
@@ -285,7 +285,7 @@
   "date": "2026-10-24",
   "site": "https://dsco-harvard26.web.app",
   "events": 45,
-  "fetched": "2026-10-27"
+  "fetched": "2026-10-28"
  },
  {
   "key": "umass26",
@@ -293,7 +293,7 @@
   "date": "2026-11-07",
   "site": "https://dsco-umass26.web.app",
   "events": 0,
-  "fetched": "2026-10-27"
+  "fetched": "2026-10-28"
  },
  {
   "key": "tufts26",
@@ -301,7 +301,7 @@
   "date": "2026-11-21",
   "site": "https://dsco-tufts26.web.app",
   "events": 0,
-  "fetched": "2026-10-27"
+  "fetched": "2026-10-28"
  },
  {
   "key": "ecfb26",
@@ -309,7 +309,7 @@
   "date": "2026-12-05",
   "site": "https://dsco-ecfb26.web.app",
   "events": 0,
-  "fetched": "2026-10-27"
+  "fetched": "2026-10-28"
  },
  {
   "key": "terrier26",
@@ -317,7 +317,7 @@
   "date": "2026-12-06",
   "site": "https://dsco-terrier26.web.app",
   "events": 0,
-  "fetched": "2026-10-27"
+  "fetched": "2026-10-28"
  },
  {
   "key": "badc27",
@@ -325,7 +325,7 @@
   "date": "2027-02-20",
   "site": "https://dsco-badc27.web.app",
   "events": 0,
-  "fetched": "2026-10-27"
+  "fetched": "2026-10-28"
  },
  {
   "key": "brandeis26",
@@ -333,7 +333,7 @@
   "date": "2027-03-14",
   "site": "https://dsco-brandeis26.web.app",
   "events": 0,
-  "fetched": "2026-10-27"
+  "fetched": "2026-10-28"
  },
  {
   "key": "wpi27",
@@ -341,7 +341,7 @@
   "date": "2027-03-27",
   "site": "https://dsco-wpi27.web.app",
   "events": 0,
-  "fetched": "2026-10-27"
+  "fetched": "2026-10-28"
  },
  {
   "key": "northeastern27",
@@ -349,6 +349,6 @@
   "date": "2027-04-11",
   "site": "https://dsco-northeastern27.web.app",
   "events": 0,
-  "fetched": "2026-10-27"
+  "fetched": "2026-10-28"
  }
 ]
